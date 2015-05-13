@@ -1,0 +1,22 @@
+@()
+
+@main("Welcome to the spark streaming test bed") {
+
+  <script>
+    function sendPlan() {
+        var xhr = new XMLHttpRequest();
+
+        xhr.open("POST", "postPlan", true)
+        xhr.setRequestHeader("Content-type", "text/plain")
+        xhr.send(document.getElementById("plan").value)
+    }
+  </script>
+
+  <h1>Your test plan:</h1>
+  <div>
+    <textarea cols="60" rows="40" id="plan"></textarea>
+  </div>
+  <div>
+    <button onclick="sendPlan()">Submit</button>
+  </div>
+}
