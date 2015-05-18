@@ -137,13 +137,13 @@ object EpochSchedulerActor {
   def props(serverManager: ActorRef) = Props(classOf[EpochSchedulerActor], serverManager)
 }
 
-class ServerManagerActor extends Actor {
+class ServerManagerActor(socketPort: Int) extends Actor {
 
   def receive = initialization
 
   val initialization: Actor.Receive = {
     case ServerManagerActor.StartMsg =>
-      val server = Server(self)
+      val server = Server(self, socketPort)
       context.become(processConnectionsAndData(server, Nil))
   }
 
@@ -170,7 +170,7 @@ object ServerManagerActor {
   case class ConnectionClosedMsg(connectionActor: ActorRef)
   case class SendInt(i: Int)
 
-  def props() = Props(classOf[ServerManagerActor])
+  def props(socketPort: Int) = Props(classOf[ServerManagerActor], socketPort)
 }
 
 class ConnectionManagerActor(socket: AsynchronousSocketChannel, serverManager: ActorRef) extends Actor {

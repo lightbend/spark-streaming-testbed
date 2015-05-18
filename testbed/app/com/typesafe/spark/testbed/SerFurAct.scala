@@ -12,9 +12,9 @@ import java.net.InetSocketAddress
 
 object Server {
 
-  def apply(newConnectionHandler: ActorRef): Server = {
+  def apply(newConnectionHandler: ActorRef, port: Int): Server = {
 
-    val serverSocket = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(2222))
+    val serverSocket = AsynchronousServerSocketChannel.open().bind(new InetSocketAddress(port))
 
     val server = new Server(serverSocket, newConnectionHandler)
 

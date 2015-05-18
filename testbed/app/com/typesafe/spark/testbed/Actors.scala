@@ -7,6 +7,8 @@ import akka.actor.ActorSystem
 
 /**
  * Lookup for actors used by the web front end.
+ * Actors are creating through this mechanism only when running the test as a Play application.
+ * Check TestBed for manual actor initialization.
  */
 object Actors {
 
@@ -18,20 +20,22 @@ object Actors {
 
 class Actors(app: Application) extends Plugin {
 
-  private def system: ActorSystem= Akka.system(app)
+  private def system: ActorSystem = Akka.system(app)
+
+  private def socketPort = app.configuration.getInt("testbed.port").getOrElse(2222)
 
   private lazy val dataGenerator = system.actorOf(DataGeneratorActor.props(scheduler), "dataGenerator")
-  
-  private lazy val serverManager = system.actorOf(ServerManagerActor.props(), "serverManager")
-  
+
+  private lazy val serverManager = system.actorOf(ServerManagerActor.props(socketPort), "serverManager")
+
   private lazy val scheduler = system.actorOf(EpochSchedulerActor.props(serverManager), "scheduler")
 
   override def onStart() {
-    serverManager ! ServerManagerActor.StartMsg 
+    serverManager ! ServerManagerActor.StartMsg
   }
 
   override def onStop() {
     dataGenerator ! DataGeneratorActor.StopMsg
-    serverManager ! ServerManagerActor.StopMsg 
+    serverManager ! ServerManagerActor.StopMsg
   }
 }
