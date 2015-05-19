@@ -46,7 +46,9 @@ object SimpleStreamingApp {
     ssc.start()
 
     Future {
-      StdIn.readLine()
+      while (StdIn.readLine() != "done") {
+
+      }
       ssc.stop(true)
     }
 
