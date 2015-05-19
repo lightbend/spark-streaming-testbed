@@ -13,9 +13,10 @@ object SimpleStreamingApp {
 
   def main(args: Array[String]): Unit = {
 
-    val (sparkMaster, hostname, port) = parseArgs(args)
+    val (hostname, port) = parseArgs(args)
 
-    val conf = new SparkConf().setMaster(sparkMaster).setAppName("NetworkWordCount")
+    val conf = new SparkConf().setAppName("Streaming tower of Hanoi resolution")
+
     val ssc = new StreamingContext(conf, Seconds(5))
 
     val lines = ssc.socketTextStream(hostname, port)
@@ -23,18 +24,22 @@ object SimpleStreamingApp {
     val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
 
     val hanoiTime = numbers.map { i =>
+      // keep track of time to compute
       val startTime = System.currentTimeMillis()
+
+      // resolve the tower of Hanoi
       Hanoi.solve(i)
+
       val executionTime = System.currentTimeMillis() - startTime
       (i, executionTime)
     }
 
-    val statsByValues = hanoiTime.groupByKey().mapValues { stats(_) }
+    val statsByValues = hanoiTime.groupByKey().mapValues { stats }
 
     statsByValues.foreachRDD { v =>
       if (!v.isEmpty()) {
         println("=========")
-        v.foreach(println(_))
+        v.collect.foreach(println(_))
       }
     }
 
@@ -53,8 +58,8 @@ object SimpleStreamingApp {
    * Returns count, sum, mean and standard deviation
    *
    */
-  private def stats(value: Iterable[Long]): (Double, Double, Double, Double) = {
-    val (count, sum, sqrsum) = value.foldLeft((0L, 0L, 0L)) { (acc, v) =>
+  private def stats(value: Iterable[Long]): (Int, Long, Double, Double) = {
+    val (count, sum, sqrsum) = value.foldLeft((0, 0L, 0L)) { (acc, v) =>
       // acc: count, sum, sum of squared
       (acc._1 + 1, acc._2 + v, acc._3 + v * v)
     }
@@ -66,25 +71,24 @@ object SimpleStreamingApp {
   private def usageAndExit(message: String): Nothing = {
     println(s"""$message
 Usage:
-  SimpleStreamingApp <spark_master> <stream_hostname> <stream_port>""")
+  SimpleStreamingApp <stream_hostname> <stream_port>""")
     System.exit(1)
     throw new Exception("Never reached")
   }
 
-  private def parseArgs(args: Array[String]): (String, String, Int) = {
-    if (args.size < 3) {
+  private def parseArgs(args: Array[String]): (String, Int) = {
+    if (args.size < 2) {
       usageAndExit("Missing parameters")
-    } else if (args.size > 3) {
+    } else if (args.size > 2) {
       usageAndExit("Too many parameters")
     } else {
-      val sparkMaster = args(0)
-      val hostname = args(1)
+      val hostname = args(0)
       try {
-        val port = args(2).toInt
+        val port = args(1).toInt
         if (port < 1 || port > 65535) {
           usageAndExit(s"${args(1)} is not a valid port")
         } else {
-          (sparkMaster, hostname, port)
+          (hostname, port)
         }
       } catch {
         case e: NumberFormatException =>
