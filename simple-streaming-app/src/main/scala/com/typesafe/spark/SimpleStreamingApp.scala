@@ -38,8 +38,7 @@ object SimpleStreamingApp {
 
     statsByValues.foreachRDD { v =>
       if (!v.isEmpty()) {
-        println("=========")
-        v.collect.foreach(println(_))
+        v.collect.foreach(s => println(format(s)))
       }
     }
 
@@ -54,6 +53,10 @@ object SimpleStreamingApp {
 
     ssc.awaitTermination()
     System.exit(0)
+  }
+
+  private def format(stats: (Int, (Int, Long, Double, Double))): String = {
+    s"${stats._1}\t${stats._2._1}\t${stats._2._2}\t${stats._2._3}\t${stats._2._4}"
   }
 
   /**
