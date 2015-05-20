@@ -8,6 +8,7 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.io.StdIn
 import com.typesafe.spark.test.Hanoi
+import org.apache.spark.storage.StorageLevel
 
 object SimpleStreamingApp {
 
@@ -19,7 +20,7 @@ object SimpleStreamingApp {
 
     val ssc = new StreamingContext(conf, Seconds(5))
 
-    val lines = ssc.socketTextStream(hostname, port)
+    val lines = ssc.socketTextStream(hostname, port, StorageLevel.MEMORY_ONLY)
 
     val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
 
