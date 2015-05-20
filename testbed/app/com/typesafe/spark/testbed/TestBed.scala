@@ -32,7 +32,7 @@ Usage:
     serverManager ! ServerManagerActor.StartMsg
 
     import akka.pattern.ask
-    implicit val timeout = Timeout(180 days)
+    implicit val timeout = Timeout(180.days)
     ask(dataGenerator, DataGeneratorActor.TestPlanMsg(testPlan)).mapTo[DataGeneratorActor.TestPlanDoneMsg]
       .map { msg =>
         println("Test plan read fully. Wait a couple of second for all data to be transmitted")

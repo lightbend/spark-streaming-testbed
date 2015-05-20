@@ -3,25 +3,35 @@ package com.typesafe.spark.testbed
 import akka.actor.ActorSystem
 import scala.annotation.tailrec
 
-class DataGenerator(testPlan: TestPlan) {
+case class DataAtTime(time: Long, values: List[Int]) extends Ordered[DataAtTime] {
+  override def compare(that: DataAtTime): Int = {
+    (that.time - time).toInt
+  }
   
-  def valuesFor(second: Int): List[(Int, Long)] = {
-    
+  /** Returns a new instance with the time shifted of the given value.
+   */
+  def shiftTime(shift: Long) = this.copy(time = time + shift)
+}
+
+class DataGenerator(testPlan: TestPlan) {
+
+  def valuesFor(second: Int): List[DataAtTime] = {
+
     currentPhase(second) match {
       case Some((phase, secondInPhase)) =>
         val secondsInPreviousPhases = second - secondInPhase
-        phase.valuesFor(secondInPhase).map(t => (t._1, t._2 + secondsInPreviousPhases * 1000))
+        phase.valuesFor(secondInPhase).map(_.shiftTime(secondsInPreviousPhases * 1000))
       case None =>
         List()
     }
   }
-  
+
   def isDoneAt(second: Int): Boolean = {
     testPlan.duration.map { _ <= second }.getOrElse(false)
   }
-  
+
   private def currentPhase(second: Int): Option[(TestPhase, Int)] = {
-    @tailrec 
+    @tailrec
     def loop(phases: List[TestPhase], remainingSecond: Int): Option[(TestPhase, Int)] = {
       phases match {
         case head :: tail =>
@@ -37,7 +47,7 @@ class DataGenerator(testPlan: TestPlan) {
           None
       }
     }
-    
+
     loop(testPlan.phases, second)
   }
 

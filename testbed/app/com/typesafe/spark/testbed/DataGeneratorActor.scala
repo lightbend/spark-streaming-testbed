@@ -41,8 +41,8 @@ class DataGeneratorActor(scheduler: ActorRef) extends Actor {
       scheduler ! EpochSchedulerActor.clearMsg
       context.become(executeNewTestPlan(testPlan, sender))
     case DataGeneratorActor.TickMsg =>
-      dataGenerator.valuesFor(tick).foreach { item =>
-        scheduler ! EpochSchedulerActor.ScheduleMsg(startTime + item._2, item._1)
+      dataGenerator.valuesFor(tick).foreach { data =>
+        scheduler ! EpochSchedulerActor.ScheduleMsg(data.shiftTime(startTime))
       }
       if (dataGenerator.isDoneAt(tick)) {
         // test plan is done, return in waiting state
@@ -72,28 +72,26 @@ object DataGeneratorActor {
 
 class EpochSchedulerActor(serverManager: ActorRef) extends Actor {
 
-  import EpochSchedulerActor.Item
-
-  private val scheduledItems = mutable.PriorityQueue[Item]() /* mutable !! */
+  private val scheduledItems = mutable.PriorityQueue[DataAtTime]() /* mutable !! */
 
   def receive = emptyState
 
   private val emptyState: Actor.Receive = {
-    case EpochSchedulerActor.ScheduleMsg(time, value) =>
+    case EpochSchedulerActor.ScheduleMsg(data) =>
       println("Scheduler waking up.")
-      context.become(startScheduler(Item(time, value)))
+      context.become(startScheduler(data))
   }
 
-  private def startScheduler(firstItem: Item): Actor.Receive = {
+  private def startScheduler(firstData: DataAtTime): Actor.Receive = {
     import scala.concurrent.duration._
     val tickTask = context.system.scheduler.schedule(0.second, 10.microsecond, self, EpochSchedulerActor.TickMsg)
-    scheduledItems += firstItem
+    scheduledItems += firstData
     runningState(tickTask)
   }
 
   private def runningState(tickTask: Cancellable): Actor.Receive = {
-    case EpochSchedulerActor.ScheduleMsg(time, value) =>
-      scheduledItems += Item(time, value)
+    case EpochSchedulerActor.ScheduleMsg(data) =>
+      scheduledItems += data
     case EpochSchedulerActor.TickMsg =>
       pushReadyItems()
       if (scheduledItems.isEmpty) {
@@ -111,7 +109,7 @@ class EpochSchedulerActor(serverManager: ActorRef) extends Actor {
     def loop() {
       scheduledItems.headOption match {
         case Some(head) if head.time <= currentTime =>
-          serverManager ! ServerManagerActor.SendInt(head.value)
+          serverManager ! ServerManagerActor.SendInts(head.values)
           scheduledItems.dequeue()
           loop()
         case _ =>
@@ -124,13 +122,7 @@ class EpochSchedulerActor(serverManager: ActorRef) extends Actor {
 
 object EpochSchedulerActor {
 
-  private case class Item(time: Long, value: Int) extends Ordered[Item] {
-    override def compare(that: Item): Int = {
-      (that.time - time).toInt
-    }
-  }
-
-  case class ScheduleMsg(time: Long, value: Int)
+  case class ScheduleMsg(data: DataAtTime)
   case object clearMsg
   private case object TickMsg
 
@@ -157,7 +149,7 @@ class ServerManagerActor(socketPort: Int) extends Actor {
       connectionActors.foreach { _ ! ServerManagerActor.StopMsg }
       server.close()
       context.become(initialization)
-    case m: ServerManagerActor.SendInt =>
+    case m: ServerManagerActor.SendInts =>
       connectionActors.foreach { _ ! m }
   }
 
@@ -168,7 +160,7 @@ object ServerManagerActor {
   case object StartMsg
   case object StopMsg
   case class ConnectionClosedMsg(connectionActor: ActorRef)
-  case class SendInt(i: Int)
+  case class SendInts(is: List[Int])
 
   def props(socketPort: Int) = Props(classOf[ServerManagerActor], socketPort)
 }
@@ -182,8 +174,8 @@ class ConnectionManagerActor(socket: AsynchronousSocketChannel, serverManager: A
     case ServerManagerActor.StopMsg =>
       socket.close()
       self ! PoisonPill
-    case ServerManagerActor.SendInt(i) =>
-      socket.write(ByteBuffer.wrap(s"$i\n".getBytes))
+    case ServerManagerActor.SendInts(is) =>
+      socket.write(ByteBuffer.wrap(is.mkString("", "\n", "\n").getBytes))
   }
 
 }

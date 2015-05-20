@@ -6,7 +6,7 @@ trait TestPhase {
 
   def duration: Option[Int]
 
-  def valuesFor(second: Int): List[(Int, Long)]
+  def valuesFor(second: Int): List[DataAtTime]
 
 }
 
@@ -31,14 +31,19 @@ trait TestPhaseParser {
 
 case class FixedPhase(value: Int, rate: Int, duration: Option[Int]) extends TestPhase {
 
-  def valuesFor(second: Int): List[(Int, Long)] = {
+  def valuesFor(second: Int): List[DataAtTime] = {
     if (duration.map(_ < second).getOrElse(false)) {
       // not part of this phase anymore, should not have been asked
       List()
     } else {
-      val period = 1000D / rate
-      (1 to rate).map { i =>
-        (value, (second * 1000L + i * period).toLong)
+      val rateBy10ms = rate / 100D // by 10 ms
+      (0 until 100).flatMap { i =>
+        val inBucket = ((i + 1) * rateBy10ms).toInt - (i * rateBy10ms).toInt
+        if (inBucket == 0) {
+          None
+        } else {
+          Some(DataAtTime(second * 1000L + i * 10, List.fill(inBucket)(value)))
+        }
       }(collection.breakOut)
     }
   }
@@ -69,7 +74,7 @@ object FixedPhase extends TestPhaseParser {
 }
 
 case class NoopPhase(duration: Option[Int]) extends TestPhase {
-  def valuesFor(second: Int): List[(Int, Long)] =
+  def valuesFor(second: Int): List[DataAtTime] =
     Nil
 }
 
