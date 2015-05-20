@@ -36,9 +36,9 @@ object SimpleStreamingApp {
 
     val statsByValues = hanoiTime.groupByKey().mapValues { stats }
 
-    statsByValues.foreachRDD { v =>
+    statsByValues.foreachRDD { (v, time) =>
       if (!v.isEmpty()) {
-        v.collect.foreach(s => println(format(s)))
+        v.collect.foreach(s => println(format(time.milliseconds, s)))
       }
     }
 
@@ -55,22 +55,22 @@ object SimpleStreamingApp {
     System.exit(0)
   }
 
-  private def format(stats: (Int, (Int, Long, Double, Double))): String = {
-    s"${stats._1}\t${stats._2._1}\t${stats._2._2}\t${stats._2._3}\t${stats._2._4}"
+  private def format(batchTime: Long, stats: (Int, (Int, Long, Double, Double, Long))): String = {
+    s"${stats._2._5}\t$batchTime\t${stats._1}\t${stats._2._1}\t${stats._2._2}\t${stats._2._3}\t${stats._2._4}"
   }
 
   /**
    * Returns count, sum, mean and standard deviation
    *
    */
-  private def stats(value: Iterable[Long]): (Int, Long, Double, Double) = {
+  private def stats(value: Iterable[Long]): (Int, Long, Double, Double, Long) = {
     val (count, sum, sqrsum) = value.foldLeft((0, 0L, 0L)) { (acc, v) =>
       // acc: count, sum, sum of squared
       (acc._1 + 1, acc._2 + v, acc._3 + v * v)
     }
     val mean = sum.toDouble / count
     val stddev = math.sqrt(count * sqrsum - sum * sum) / count
-    (count, sum, mean, stddev)
+    (count, sum, mean, stddev, System.currentTimeMillis())
   }
 
   private def usageAndExit(message: String): Nothing = {
