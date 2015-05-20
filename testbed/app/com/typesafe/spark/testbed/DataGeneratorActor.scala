@@ -49,14 +49,16 @@ class DataGeneratorActor(scheduler: ActorRef) extends Actor {
         // scheduler continues to push the scheduled messages
         println("Test plan done. DataGenerator going to sleep.")
         tickTask.cancel()
-        requestor ! DataGeneratorActor.TestPlanDoneMsg(0)
+        if (requestor != context.system.deadLetters) {
+          requestor ! DataGeneratorActor.TestPlanDoneMsg(0)
+        }
         context.become(initialState)
       } else {
         // continue test plan
         context.become(executeTestPlan(dataGenerator, startTime, tick + 1, requestor, tickTask))
       }
   }
-  
+
 }
 
 object DataGeneratorActor {
