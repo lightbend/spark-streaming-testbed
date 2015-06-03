@@ -16,7 +16,9 @@ object SimpleStreamingApp {
 
     val (hostname, port) = parseArgs(args)
 
-    val conf = new SparkConf().setAppName("Streaming tower of Hanoi resolution")
+    val conf = new SparkConf()
+      .setAppName("Streaming tower of Hanoi resolution")
+      .set("spark.streaming.receiver.congestionStrategy", "drop")
 
     val ssc = new StreamingContext(conf, Seconds(5))
 
