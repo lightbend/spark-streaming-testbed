@@ -6,7 +6,7 @@ import org.apache.spark.streaming.Seconds
 import scala.util.Try
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.io.StdIn
+import scala.io
 import com.typesafe.spark.test.Hanoi
 import org.apache.spark.storage.StorageLevel
 
@@ -48,7 +48,7 @@ object SimpleStreamingApp {
     ssc.start()
 
     Future {
-      while (StdIn.readLine() != "done") {
+      while (Console.readLine() != "done") {
 
       }
       ssc.stop(true)
