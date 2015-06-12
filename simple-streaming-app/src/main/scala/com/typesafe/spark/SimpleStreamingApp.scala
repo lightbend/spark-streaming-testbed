@@ -6,7 +6,7 @@ import org.apache.spark.streaming.Seconds
 import scala.util.Try
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.io.StdIn
+import scala.io
 import com.typesafe.spark.test.Hanoi
 import org.apache.spark.storage.StorageLevel
 
@@ -14,11 +14,11 @@ object SimpleStreamingApp {
 
   def main(args: Array[String]): Unit = {
 
-    val (hostname, port) = parseArgs(args)
+    val (hostname, port, strategy) = parseArgs(args)
 
     val conf = new SparkConf()
       .setAppName("Streaming tower of Hanoi resolution")
-      .set("spark.streaming.receiver.congestionStrategy", "drop")
+      .set("spark.streaming.receiver.congestionStrategy", strategy)
 
     val ssc = new StreamingContext(conf, Seconds(5))
 
@@ -48,7 +48,7 @@ object SimpleStreamingApp {
     ssc.start()
 
     Future {
-      while (StdIn.readLine() != "done") {
+      while (Console.readLine() != "done") {
 
       }
       ssc.stop(true)
@@ -79,24 +79,27 @@ object SimpleStreamingApp {
   private def usageAndExit(message: String): Nothing = {
     println(s"""$message
 Usage:
-  SimpleStreamingApp <stream_hostname> <stream_port>""")
+  SimpleStreamingApp <stream_hostname> <stream_port> <congestion strategy>""")
     System.exit(1)
     throw new Exception("Never reached")
   }
 
-  private def parseArgs(args: Array[String]): (String, Int) = {
-    if (args.size < 2) {
+  private def parseArgs(args: Array[String]): (String, Int, String) = {
+    if (args.size < 3) {
       usageAndExit("Missing parameters")
-    } else if (args.size > 2) {
+    } else if (args.size > 3) {
       usageAndExit("Too many parameters")
     } else {
       val hostname = args(0)
+      val strategy = args(2)
+      if (!List("ignore", "drop", "sampling", "pushback", "reactive").contains(strategy))
+        usageAndExit(s"${args(2)} is not a valid strategy")
       try {
         val port = args(1).toInt
         if (port < 1 || port > 65535) {
           usageAndExit(s"${args(1)} is not a valid port")
         } else {
-          (hostname, port)
+          (hostname, port, strategy)
         }
       } catch {
         case e: NumberFormatException =>
