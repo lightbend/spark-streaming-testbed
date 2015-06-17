@@ -27,7 +27,11 @@ object SimpleStreamingApp {
 
     val ssc = new StreamingContext(conf, Milliseconds(batchInterval))
 
-    val lines = ssc.socketTextStream(hostname, port, StorageLevel.MEMORY_ONLY)
+    val rawInput1 = ssc.socketTextStream(hostname, port, StorageLevel.MEMORY_ONLY)
+    val rawInput2 = ssc.socketTextStream(hostname, port, StorageLevel.MEMORY_ONLY).flatMap(x => Seq(x, x))
+
+    // test two different receivers, one with twice as many elements as the other
+    val lines = rawInput1.union(rawInput2)
 
     val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
 
