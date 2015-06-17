@@ -9,6 +9,11 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.io
 import com.typesafe.spark.test.Hanoi
 import org.apache.spark.storage.StorageLevel
+import org.apache.spark.streaming.dstream.DStream
+
+/** Simple statistics data class
+ */
+private case class Stats(count: Int, sum: Long, mean: Double, stdDev: Double, millis: Long)
 
 object SimpleStreamingApp {
 
@@ -37,11 +42,11 @@ object SimpleStreamingApp {
       (i, executionTime)
     }
 
-    val statsByValues = hanoiTime.groupByKey().mapValues { stats }
+    val statsByValues: DStream[(Int, Stats)] = hanoiTime.groupByKey().mapValues { stats }
 
     statsByValues.foreachRDD { (v, time) =>
       if (!v.isEmpty()) {
-        v.collect.foreach(s => println(format(time.milliseconds, s)))
+        v.collect.foreach(s => println(format(time.milliseconds, s._1, s._2)))
       }
     }
 
@@ -58,22 +63,21 @@ object SimpleStreamingApp {
     System.exit(0)
   }
 
-  private def format(batchTime: Long, stats: (Int, (Int, Long, Double, Double, Long))): String = {
-    s"${stats._2._5}\t$batchTime\t${stats._1}\t${stats._2._1}\t${stats._2._2}\t${stats._2._3}\t${stats._2._4}"
+  private def format(batchTime: Long, input: Int, stats: Stats): String = {
+    s"${stats.millis}\t$batchTime\t$input\t${stats.count}\t${stats.sum}\t${stats.mean}\t${stats.stdDev}"
   }
 
-  /**
-   * Returns count, sum, mean and standard deviation
+  /** Returns count, sum, mean and standard deviation
    *
    */
-  private def stats(value: Iterable[Long]): (Int, Long, Double, Double, Long) = {
+  private def stats(value: Iterable[Long]): Stats = {
     val (count, sum, sqrsum) = value.foldLeft((0, 0L, 0L)) { (acc, v) =>
       // acc: count, sum, sum of squared
       (acc._1 + 1, acc._2 + v, acc._3 + v * v)
     }
     val mean = sum.toDouble / count
     val stddev = math.sqrt(count * sqrsum - sum * sum) / count
-    (count, sum, mean, stddev, System.currentTimeMillis())
+    Stats(count, sum, mean, stddev, System.currentTimeMillis())
   }
 
   private def usageAndExit(message: String): Nothing = {
@@ -92,7 +96,7 @@ Usage:
     } else {
       val hostname = args(0)
       val strategy = args(2)
-      if (!List("ignore", "drop", "sampling", "pushback", "reactive").contains(strategy))
+      if (!Set("ignore", "drop", "sampling", "pushback", "reactive").contains(strategy))
         usageAndExit(s"${args(2)} is not a valid strategy")
       val port = Try(args(1).toInt) recover {
         case e: NumberFormatException =>
