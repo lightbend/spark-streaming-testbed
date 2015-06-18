@@ -4,56 +4,52 @@ __For setup and all other details, look below__
 
 ## vanilla Spark 1.4.0, TCP receiver, no congestion strategy
 
-Using [1.4.0-bin-hadoop2.4](http://www.apache.org/dyn/closer.cgi/spark/spark-1.4.0/spark-1.4.0-bin-hadoop2.4.tgz).
-
-![vanilla Spark 1.4.0, TCP receiver, no congestion strategy](vanilla-1.4.0-7-50000/graph.png)
-
-* the job takes longer than the batch interval to run.
-  * the delay accumulate.
-  * the memory usage to store the blocks to process increase.
-* when the available memory to store the blocks reaches 0, blocks stop being created, the data is not processed anymore.
+Not run again.
 
 ## streaming back pressure branch, TCP receiver, congestion strategy: ignore
 
-Using [1.4.0-streaming-t004](https://downloads.typesafe.com/typesafe-spark/test/builds/spark-1.4.0-streaming-t004-bin-2.4.0.tgz).
-
-![streaming back pressure branch, TCP receiver, congestion strategy: ignore](streaming-t004-7-50000-ignore/graph.png)
-
-* the job takes longer than the batch interval to run.
-  * the delay accumulate.
-  * the memory usage to store the blocks to process increase.
-* the feedback loop asks for a lower amount of entries. It is ignored (as per congestion strategy).
-* when the available memory to store the blocks reaches 0, blocks stop being created, the data is not processed anymore.
+Not run again.
 
 ## streaming back pressure branch, TCP receiver, congestion strategy: drop
 
-Using [1.4.0-streaming-t004](https://downloads.typesafe.com/typesafe-spark/test/builds/spark-1.4.0-streaming-t004-bin-2.4.0.tgz).
+Using [1.4.0-streaming-t005](https://downloads.typesafe.com/typesafe-spark/test/builds/spark-1.4.0-streaming-t005-bin-2.4.0.tgz).
 
-![streaming back pressure branch, TCP receiver, congestion strategy: drop](streaming-t004-7-50000-drop/graph.png)
+![streaming back pressure branch, TCP receiver, congestion strategy: drop](streaming-t005-7-50000-drop/graph.png)
 
-* the job initialy takes longer than the batch interval to run.
-  * the some delay accumulate.
-* the input size is limited accordingly to the feedback data.
-  * no more delay accumulate.
-  * the memory usage is stable.
+* a good feedback value is generated during the warm-up phase.
+* during the main test phase, feedback regulates the input size
+* no delay build-up
+* the memory usage is stable.
 * the test run to completion.
 
 ## streaming back pressure branch, TCP receiver, congestion strategy: sampling
 
-Using [1.4.0-streaming-t004](https://downloads.typesafe.com/typesafe-spark/test/builds/spark-1.4.0-streaming-t004-bin-2.4.0.tgz).
+Using [1.4.0-streaming-t005](https://downloads.typesafe.com/typesafe-spark/test/builds/spark-1.4.0-streaming-t005-bin-2.4.0.tgz).
 
-![streaming back pressure branch, TCP receiver, congestion strategy: sampling](streaming-t004-7-50000-sampling/graph.png)
+![streaming back pressure branch, TCP receiver, congestion strategy: sampling](streaming-t005-7-50000-sampling/graph.png)
 
-* the job initialy takes longer than the batch interval to run.
+* a high feedback value is generated during the warm-up phase.
+* during the main test phase, the job initialy takes longer than the batch interval to run.
   * the some delay accumulate.
-* the input size is limited accordingly to the feedback data.
-  * no more delay accumulate.
-  * the memory usage is stable.
+* feedback starts:
+  * first, limits the input size to be able to handle it during one batch interval.
+  * then, limits more to reduce the accumulated delay.
+  * when the delay is resorbed, sets back the limit so the input can be to handled during one batch interval. 
+* the memory usage is stable.
 * the test run to completion.
 
 ## streaming back pressure branch, TCP receiver, congestion strategy: pushback
 
-Not available for this test runs.
+Using [1.4.0-streaming-t005](https://downloads.typesafe.com/typesafe-spark/test/builds/spark-1.4.0-streaming-t005-bin-2.4.0.tgz).
+
+![streaming back pressure branch, TCP receiver, congestion strategy: pushback](streaming-t005-7-50000-pushback/graph.png)
+
+* a low feedback value is generated during the warm-up phase.
+* during the main test phase, feedback adjusts up the limit value, then regulates the input size
+* no delay build-up
+* the memory usage is stable.
+* the test should stop after 342 secondes, but data is still incoming for 80 more seconds
+  * the testbed application has to be fixed to manage the pushback coming from TCP
 
 ## streaming back pressure branch, reactive receiver
 
@@ -80,10 +76,18 @@ The test configuration is the following:
 
 ```
 sequence = [
-  { type = noop
+  { type = noop    # warm-up
     duration = 2
   }
   { type = fixed
+    value = 7
+    rate = 50000
+    duration = 10
+  }
+  { type = noop
+    duration = 30
+  }
+  { type = fixed   # actual test
     value = 7
     rate = 50000
     duration = 300
@@ -111,10 +115,10 @@ binary: [simple-streaming-app_2.10-0.1.6.jar](https://downloads.typesafe.com/typ
 
 ### streaming application execution
 
-The application is 
+The application is launched using: 
 
 ```
-bin/spark-submit --class com.typesafe.spark.SimpleStreamingApp --master spark://ip-10-181-16-212:7077 <location/simple-streaming-app_2.10-0.1.6.jar> <testbed_ec2_internal_name> 2222 <congestion_strategy>
+bin/spark-submit --class com.typesafe.spark.SimpleStreamingApp --master spark://<master_internal_ec2_hostname>:7077 <location/simple-streaming-app_2.10-0.1.6.jar> <testbed_ec2_internal_name> 2222 <congestion_strategy>
 ```
 
 ## Additional logs
@@ -167,18 +171,5 @@ awk -v baseTime=${BASE_TIME} '{ cmd = "date --date=\""$1" "$2"\" +%s%3N"; cmd | 
 
 ## Plots
 
-gnuplot script:
-
-```
-set y2range [0:]
-set y2tics
-set yrange [0:]
-set boxwidth 1500 absolute
-set style arrow 1 nohead ls 1
-
-set terminal png size 2000,1000
-set output "graph.png"
-
-plot "execution-processed.log" using 2:(0):($1-$2):3 with vector title "delay + processing, of each batch" arrowstyle 1, "" using 2:4 axes x1y2 with line title "# of items processed per batch", "memory-processed.log" using 1:($3/10) with lines title "free memory to store the blocks", "feedback-processed.log" using 1:($3 * 25) axes x1y2 with lines title "feedback bound"
-```
+[gnuplot script](../graph.gnuplot)
 
