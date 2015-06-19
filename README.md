@@ -40,6 +40,11 @@ sequence = [
     rate = 4
     duration = 1
   }
+  { type = cycle        # cycle through 'values'
+    values = [5, 5, 5, 7, 5, 5, 5]
+    rate = 4
+    duration = 1
+  }
   { type = fixed
     value = 5
     rate = 200000
