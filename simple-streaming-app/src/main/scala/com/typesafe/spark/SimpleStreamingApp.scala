@@ -2,7 +2,7 @@ package com.typesafe.spark
 
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming.StreamingContext
-import org.apache.spark.streaming.Seconds
+import org.apache.spark.streaming.Milliseconds
 import scala.util.Try
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -14,13 +14,13 @@ object SimpleStreamingApp {
 
   def main(args: Array[String]): Unit = {
 
-    val (hostname, port, strategy) = parseArgs(args)
+    val (hostname, port, strategy, batchInterval) = parseArgs(args)
 
     val conf = new SparkConf()
       .setAppName("Streaming tower of Hanoi resolution")
       .set("spark.streaming.receiver.congestionStrategy", strategy)
 
-    val ssc = new StreamingContext(conf, Seconds(5))
+    val ssc = new StreamingContext(conf, Milliseconds(batchInterval))
 
     val lines = ssc.socketTextStream(hostname, port, StorageLevel.MEMORY_ONLY)
 
@@ -79,33 +79,34 @@ object SimpleStreamingApp {
   private def usageAndExit(message: String): Nothing = {
     println(s"""$message
 Usage:
-  SimpleStreamingApp <stream_hostname> <stream_port> <congestion strategy>""")
+  SimpleStreamingApp <stream_hostname> <stream_port> <congestion strategy> <batch interval milliseconds>""")
     System.exit(1)
     throw new Exception("Never reached")
   }
 
-  private def parseArgs(args: Array[String]): (String, Int, String) = {
-    if (args.size < 3) {
+  private def parseArgs(args: Array[String]): (String, Int, String, Int) = {
+    if (args.size < 4) {
       usageAndExit("Missing parameters")
-    } else if (args.size > 3) {
+    } else if (args.size > 4) {
       usageAndExit("Too many parameters")
     } else {
       val hostname = args(0)
       val strategy = args(2)
       if (!List("ignore", "drop", "sampling", "pushback", "reactive").contains(strategy))
         usageAndExit(s"${args(2)} is not a valid strategy")
-      try {
-        val port = args(1).toInt
-        if (port < 1 || port > 65535) {
-          usageAndExit(s"${args(1)} is not a valid port")
-        } else {
-          (hostname, port, strategy)
-        }
-      } catch {
+      val port = Try(args(1).toInt) recover {
         case e: NumberFormatException =>
           usageAndExit(s"${args(1)} is not a valid port")
       }
+      val batchInterval = Try(args(3).toInt) recover {
+        case e: NumberFormatException =>
+          usageAndExit(s"${args(3)} is not a valid batch interval")
+      }
+      if (port.get < 1 || port.get > 65535) {
+        usageAndExit(s"${args(1)} is not a valid port")
+      } else {
+        (hostname, port.get, strategy, batchInterval.get)
+      }
     }
   }
-
 }
