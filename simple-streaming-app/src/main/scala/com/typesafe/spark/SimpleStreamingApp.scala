@@ -23,6 +23,12 @@ object SimpleStreamingApp {
 
     val config = parseArgs(args)
 
+    {
+      import config._
+      println(s"""
+        Connecting to $hostname:$port using Spark $master and $streams receivers.
+      """)
+    }
     val conf = new SparkConf()
       .setAppName("Streaming tower of Hanoi resolution")
       .setMaster(config.master)
@@ -30,11 +36,12 @@ object SimpleStreamingApp {
 
     val ssc = new StreamingContext(conf, Milliseconds(config.batchInterval))
 
-    val rawInput1 = ssc.socketTextStream(config.hostname, config.port, StorageLevel.MEMORY_ONLY)
-    val rawInput2 = ssc.socketTextStream(config.hostname, config.port, StorageLevel.MEMORY_ONLY).flatMap(x => Seq(x, x))
+    // create n receivers, each one having more elements than the previous one
+    val rawInputs = for (i <- 1 to config.streams) yield
+      ssc.socketTextStream(config.hostname, config.port, StorageLevel.MEMORY_ONLY)
+         .flatMap(x => Seq.fill(1 + (i - 1) * config.step)(x))
 
-    // test two different receivers, one with twice as many elements as the other
-    val lines = rawInput1.union(rawInput2)
+    val lines = rawInputs.reduce(_ union _)
 
     val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
 
@@ -87,7 +94,7 @@ object SimpleStreamingApp {
     Stats(count, sum, mean, stddev, System.currentTimeMillis())
   }
 
-  val DefaultConfig = Config("local[*]", "", -1, 1000, "ignore", 1)
+  val DefaultConfig = Config("local[*]", "", -1, 1000, "ignore", 1, 1)
 
   private val parser = new OptionParser[Config]("simple-streaming") {
     help("help")
@@ -121,9 +128,9 @@ object SimpleStreamingApp {
       .action { (x, c) => c.copy(batchInterval = x) }
       .text("The batch interval in milliseconds.")
 
-    opt[Int]('r', "receivers")
-      .action { (x, c) => c.copy(streams = x) }
-      .text("Port number to which receivers should connect")
+    opt[(Int, Int)]('r', "receivers")
+      .action { (x, c) => c.copy(streams = x._1, step = x._2) }
+      .text("The number of receivers and the multiplier for stream elements, separated by `=`.")
 
   }
 
