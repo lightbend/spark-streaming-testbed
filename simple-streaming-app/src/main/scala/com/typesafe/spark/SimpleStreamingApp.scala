@@ -10,6 +10,8 @@ import scala.io
 import com.typesafe.spark.test.Hanoi
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.dstream.DStream
+import scopt.OptionParser
+import scopt.Zero
 
 /** Simple statistics data class
  */
@@ -19,16 +21,17 @@ object SimpleStreamingApp {
 
   def main(args: Array[String]): Unit = {
 
-    val (hostname, port, strategy, batchInterval) = parseArgs(args)
+    val config = parseArgs(args)
 
     val conf = new SparkConf()
       .setAppName("Streaming tower of Hanoi resolution")
-      .set("spark.streaming.receiver.congestionStrategy", strategy)
+      .setMaster(config.master)
+      .set("spark.streaming.receiver.congestionStrategy", config.strategy)
 
-    val ssc = new StreamingContext(conf, Milliseconds(batchInterval))
+    val ssc = new StreamingContext(conf, Milliseconds(config.batchInterval))
 
-    val rawInput1 = ssc.socketTextStream(hostname, port, StorageLevel.MEMORY_ONLY)
-    val rawInput2 = ssc.socketTextStream(hostname, port, StorageLevel.MEMORY_ONLY).flatMap(x => Seq(x, x))
+    val rawInput1 = ssc.socketTextStream(config.hostname, config.port, StorageLevel.MEMORY_ONLY)
+    val rawInput2 = ssc.socketTextStream(config.hostname, config.port, StorageLevel.MEMORY_ONLY).flatMap(x => Seq(x, x))
 
     // test two different receivers, one with twice as many elements as the other
     val lines = rawInput1.union(rawInput2)
@@ -84,37 +87,51 @@ object SimpleStreamingApp {
     Stats(count, sum, mean, stddev, System.currentTimeMillis())
   }
 
-  private def usageAndExit(message: String): Nothing = {
-    println(s"""$message
-Usage:
-  SimpleStreamingApp <stream_hostname> <stream_port> <congestion strategy> <batch interval milliseconds>""")
-    System.exit(1)
-    throw new Exception("Never reached")
+  val DefaultConfig = Config("local[*]", "", -1, 1000, "ignore", 1)
+
+  private val parser = new OptionParser[Config]("simple-streaming") {
+    help("help")
+      .text("Prints this usage text")
+
+    opt[String]('h', "hostname")
+      .required()
+      .action { (x, c) => c.copy(hostname = x) }
+      .text("Hostname where receivers should connect")
+
+    opt[Int]('p', "port")
+      .required()
+      .action { (x, c) => c.copy(port = x) }
+      .text("Port number to which receivers should connect")
+
+    opt[String]('m', "master")
+      .action { (x, c) => c.copy(master = x) }
+      .text("Spark master to connect to")
+
+    opt[String]('s', "strategy")
+      .action { (x, c) => c.copy(strategy = x) }
+      .text("Push-back strategy to use")
+      .validate { s =>
+        if (Set("ignore", "drop", "sampling", "pushback", "reactive").contains(s))
+          success
+        else
+          failure(s"$s is not a valid strategy")
+      }
+
+    opt[Int]('b', "batch-interval")
+      .action { (x, c) => c.copy(batchInterval = x) }
+      .text("The batch interval in milliseconds.")
+
+    opt[Int]('r', "receivers")
+      .action { (x, c) => c.copy(streams = x) }
+      .text("Port number to which receivers should connect")
+
   }
 
-  private def parseArgs(args: Array[String]): (String, Int, String, Int) = {
-    if (args.size < 4) {
-      usageAndExit("Missing parameters")
-    } else if (args.size > 4) {
-      usageAndExit("Too many parameters")
-    } else {
-      val hostname = args(0)
-      val strategy = args(2)
-      if (!Set("ignore", "drop", "sampling", "pushback", "reactive").contains(strategy))
-        usageAndExit(s"${args(2)} is not a valid strategy")
-      val port = Try(args(1).toInt) recover {
-        case e: NumberFormatException =>
-          usageAndExit(s"${args(1)} is not a valid port")
-      }
-      val batchInterval = Try(args(3).toInt) recover {
-        case e: NumberFormatException =>
-          usageAndExit(s"${args(3)} is not a valid batch interval")
-      }
-      if (port.get < 1 || port.get > 65535) {
-        usageAndExit(s"${args(1)} is not a valid port")
-      } else {
-        (hostname, port.get, strategy, batchInterval.get)
-      }
+  private def parseArgs(args: Array[String]): Config = {
+    parser.parse(args, DefaultConfig) match {
+      case Some(config) => config
+      case None =>
+        sys.exit(1)
     }
   }
 }
