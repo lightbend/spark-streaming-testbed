@@ -9,6 +9,8 @@ import com.typesafe.spark.testbed.DataGeneratorActor
 
 object Application extends Controller {
 
+  val logger: Logger = Logger(this.getClass)
+
   def index = Action {
     Ok(views.html.index())
   }
@@ -17,10 +19,10 @@ object Application extends Controller {
     request.body.asText match {
       case Some(plan) =>
         val testPlan = TestPlan.parse(plan)
-        println(testPlan)
+        logger.info(s"Test plan received: $testPlan")
         Actors.dataGenerator ! DataGeneratorActor.TestPlanMsg(testPlan)
       case None =>
-        println("No plan received")
+        logger.info("No plan received")
     }
     Ok("all clear")
   }
