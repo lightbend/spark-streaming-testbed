@@ -10,14 +10,17 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import akka.actor.Cancellable
 import scala.collection.mutable
 import scala.annotation.tailrec
+import play.api.Logger
 
 class DataGeneratorActor(scheduler: ActorRef) extends Actor {
 
   def receive = initialState
 
+  val logger: Logger = Logger(this.getClass)
+
   val initialState: Actor.Receive = {
     case DataGeneratorActor.TestPlanMsg(testPlan) =>
-      println("New test plan. DataGenerator waking up.")
+      logger.info("New test plan. DataGenerator waking up.")
       context.become(executeNewTestPlan(testPlan, sender))
   }
 
@@ -41,13 +44,10 @@ class DataGeneratorActor(scheduler: ActorRef) extends Actor {
       scheduler ! EpochSchedulerActor.clearMsg
       context.become(executeNewTestPlan(testPlan, sender))
     case DataGeneratorActor.TickMsg =>
-      dataGenerator.valuesFor(tick).foreach { data =>
-        scheduler ! EpochSchedulerActor.ScheduleMsg(data.shiftTime(startTime))
-      }
       if (dataGenerator.isDoneAt(tick)) {
         // test plan is done, return in waiting state
         // scheduler continues to push the scheduled messages
-        println("Test plan done. DataGenerator going to sleep.")
+        logger.info("Test plan done. DataGenerator going to sleep.")
         tickTask.cancel()
         if (requestor != context.system.deadLetters) {
           requestor ! DataGeneratorActor.TestPlanDoneMsg(0)
@@ -55,6 +55,11 @@ class DataGeneratorActor(scheduler: ActorRef) extends Actor {
         context.become(initialState)
       } else {
         // continue test plan
+        val values = dataGenerator.valuesFor(tick)
+        logger.info(s"${values.map(_.values.size).sum} values for tick $tick")
+        values.foreach { data =>
+          scheduler ! EpochSchedulerActor.ScheduleMsg(data.shiftTime(startTime))
+        }
         context.become(executeTestPlan(dataGenerator, startTime, tick + 1, requestor, tickTask))
       }
   }
@@ -74,13 +79,15 @@ object DataGeneratorActor {
 
 class EpochSchedulerActor(serverManager: ActorRef) extends Actor {
 
+  val logger: Logger = Logger(this.getClass)
+
   private val scheduledItems = mutable.PriorityQueue[DataAtTime]() /* mutable !! */
 
   def receive = emptyState
 
   private val emptyState: Actor.Receive = {
     case EpochSchedulerActor.ScheduleMsg(data) =>
-      println("Scheduler waking up.")
+      logger.info("Scheduler waking up.")
       context.become(startScheduler(data))
   }
 
@@ -98,7 +105,7 @@ class EpochSchedulerActor(serverManager: ActorRef) extends Actor {
       pushReadyItems()
       if (scheduledItems.isEmpty) {
         tickTask.cancel()
-        println("Scheduler queue empty. Going to sleep.")
+        logger.info("Scheduler queue empty. Going to sleep.")
         context.become(emptyState)
       }
     case EpochSchedulerActor.clearMsg =>
