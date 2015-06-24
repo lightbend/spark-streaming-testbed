@@ -24,6 +24,7 @@ object TestPhase {
     "cycle" -> CyclePhase,
     "fixed" -> FixedPhase,
     "ramp" -> RampPhase,
+    "loop" -> LoopPhase,
     "noop" -> NoopPhase)
 }
 

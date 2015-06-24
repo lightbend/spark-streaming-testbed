@@ -51,6 +51,20 @@ sequence = [
     rate = 4
     duration = 1
   }
+  { type = loop         # repeat the sequence in 'phases' for the number of 'times' given
+    times = 3           # (optional. If not specified, will loop indefinitively)
+    phases = [
+      { type = fixed
+        value = 5
+        rate = 10
+        duration = 2
+      }
+      { type = fixed
+        value = 6
+        rate = 5
+        duration = 3
+    ]
+  }
 ]
 ```
 
