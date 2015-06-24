@@ -11,6 +11,7 @@ import akka.actor.Cancellable
 import scala.collection.mutable
 import scala.annotation.tailrec
 import play.api.Logger
+import scala.concurrent.Promise
 
 class DataGeneratorActor(scheduler: ActorRef) extends Actor {
 
@@ -176,7 +177,11 @@ object ServerManagerActor {
 
 class ConnectionManagerActor(socket: AsynchronousSocketChannel, serverManager: ActorRef) extends Actor {
 
-  def receive = {
+  val logger: Logger = Logger(this.getClass)
+
+  def receive = readyToWrite
+
+  val readyToWrite: Actor.Receive = {
     case Server.ConnectionClosedMsg =>
       serverManager ! ServerManagerActor.ConnectionClosedMsg(self)
       self ! PoisonPill
@@ -184,11 +189,36 @@ class ConnectionManagerActor(socket: AsynchronousSocketChannel, serverManager: A
       socket.close()
       self ! PoisonPill
     case ServerManagerActor.SendInts(is) =>
-      socket.write(ByteBuffer.wrap(is.mkString("", "\n", "\n").getBytes))
+      val promise = Promise[Integer]
+
+      socket.write(ByteBuffer.wrap(is.mkString("", "\n", "\n").getBytes), promise, new CompletionHandlerForPromise[Integer])
+
+      promise.future.foreach { byteWritten =>
+        self ! ConnectionManagerActor.DataWritten
+      }
+
+      context.become(waitingWriteAck)
+  }
+
+  val waitingWriteAck: Actor.Receive = {
+    case Server.ConnectionClosedMsg =>
+      serverManager ! ServerManagerActor.ConnectionClosedMsg(self)
+      self ! PoisonPill
+    case ServerManagerActor.StopMsg =>
+      socket.close()
+      self ! PoisonPill
+    case ConnectionManagerActor.DataWritten =>
+      context.become(readyToWrite)
+    case ServerManagerActor.SendInts(is) =>
+      // TODO: it would be good to be able to delay data a bit. Maybe
+      logger.warn(s"unable to deliver ${is.size} values")
   }
 
 }
 
 object ConnectionManagerActor {
+
+  case object DataWritten
+
   def props(socket: AsynchronousSocketChannel, serverManager: ActorRef) = Props(classOf[ConnectionManagerActor], socket, serverManager)
 }
