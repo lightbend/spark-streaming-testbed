@@ -33,7 +33,13 @@ The test plan look like that:
 ```
 sequence = [
   { type = noop         # does nothing, for the duration
-    duration = 2        # allow to temporize, to be sure that the clien have connected to the socket.
+    duration = 2        # allow to temporize, to be sure that the client have connected to the socket.
+  }
+  { type = ramp         # ramp up or down
+    startRate = 1000    # the rate for the first second is startRate, the rate for the last second is endRate
+    endRate = 50000     # with a linear progression for the seconds in between
+    value = 5
+    duration = 10       # duration is not optional for this phase type
   }
   { type = fixed        # push the same number (value), for the duration, at the given rate.
     value = 1           # rate: number of number pushed per second
@@ -44,11 +50,6 @@ sequence = [
     values = [5, 5, 5, 7, 5, 5, 5]
     rate = 4
     duration = 1
-  }
-  { type = fixed
-    value = 5
-    rate = 200000
-    duration = 10
   }
 ]
 ```
