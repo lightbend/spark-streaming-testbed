@@ -6,7 +6,6 @@ import org.apache.spark.streaming.Milliseconds
 import scala.util.Try
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.io
 import com.typesafe.spark.test.Hanoi
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.dstream.DStream
@@ -31,8 +30,10 @@ object SimpleStreamingApp {
     }
     val conf = new SparkConf()
       .setAppName("Streaming tower of Hanoi resolution")
-      .setMaster(config.master)
       .set("spark.streaming.receiver.congestionStrategy", config.strategy)
+
+     if (conf.getOption("spark.master").isEmpty)
+       conf.setMaster(config.master)
 
     val ssc = new StreamingContext(conf, Milliseconds(config.batchInterval))
 
