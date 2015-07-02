@@ -1,0 +1,125 @@
+package com.typesafe.spark.testbed.logprocessor
+
+import java.io.File
+import java.io.FileWriter
+import scala.sys.process.Process
+
+object Main {
+
+  def main(args: Array[String]): Unit = {
+    // TODO: check the arguments, and the availability of the log files
+    val baseFolder = new File(args(0))
+    val title = args(1)
+
+    // load the data for the logs
+    val data = TestData.load(baseFolder)
+
+    // generate the graph(s)
+    createGraphs(data.timeShift, title, baseFolder)
+  }
+
+  private def createGraphs(data: TestData, title: String, workFolder: File) {
+
+    // dump in files the data needed by gnuplot
+    data.dump(workFolder)
+    
+    // generate the gnuplot scripte
+    val gsWriter = new FileWriter(new File(workFolder, "graph.gnuplot"))
+    gsWriter.write(generateGnuplotScript(data, title))
+    gsWriter.close
+
+    // run gnuplot
+    val l = Process("/usr/bin/gnuplot graph.gnuplot", workFolder).lines
+    println(l.mkString)
+  }
+
+  private def generateGnuplotScript(data: TestData, title: String): String = {
+    val builder = new StringBuilder("""
+set y2range [0:]
+set y2tics
+set yrange [0:]
+set lmargin 12
+set rmargin 10
+
+set style arrow 1 nohead ls 1
+set ytics nomirror
+
+set terminal pngcairo dashed enhanced font "arial,10" fontscale 1.0 size 1500,1000
+set output "graph.png"
+""")
+    builder.append(s"""
+set multiplot layout 3, 1 title "$title"
+""")
+
+    builder.append(s"""
+set xrange [ ${data.minTime - 5000} : ${data.maxTime + 5000} ]""")
+
+    builder.append("""
+set xtics format " "
+set bmargin 1
+set ylabel "execution time (in milliseconds)"
+set y2label "memory (in MB)"
+
+plot "memory.log" using 1:(5000) with line lt 0 lc 3 title "batch interval", \
+  "execution.log" using 2:(0):($1-$2):($1-$2) with vector title "Spark - delay + processing, of each batch" arrowstyle 1, \
+  "memory.log" using 1:($2/1024) axes x1y2 with lines title "Spark - free memory to store the blocks" lt 1 lc 2
+ 
+
+""")
+
+    builder.append("""
+set tmargin 0
+set ylabel "# of items"
+set y2label "drop ratio"
+
+plot """)
+
+    if (!data.ratio.isEmpty)
+      builder.append(""""ratio.log" using 1:2 axes x1y2 with lines title "Congestion strategie - drop ratio, for each block" lt 1 lc rgb "#DDDDDD", \
+  "ratio.log" u 1:2 axes x1y2 smooth bezier title "smoothed drop ratio" lt 1 lc "black", \
+""")
+    builder.append(""""execution.log" using 2:4 with line title "Spark - # of items processed per batch" lt 1 lc 3""")
+    if (!data.feedback.isEmpty)
+      builder.append(""", \
+  "feedback.log" using 1:($2 * 25) with lines title "Spark - feedback bound, max # of item per batch" lt 1 lc 4""")
+    builder.append("""
+
+""")
+
+    builder.append("""
+set xlabel "timeline (in milliseconds)"
+
+""")
+
+    builder.append("""
+set xtics format "%g"
+set bmargin 3
+set ylabel "# of items"
+unset y2label
+unset y2tics
+
+""")
+
+    val maxTickValue = data.tick.map(_.count).max
+    val maxdroppedValues = data.droppedValuesPerSecond.map(_.count).max
+
+    builder.append(s"""
+set yrange [ 0 : ${(maxTickValue * 1.2).toInt} ]
+set y2range [ 0 : ${(maxdroppedValues * 1.2).toInt} ]
+""")
+
+    builder.append("""
+set boxwidth 1000
+
+plot "tick.log" using 1:2 with steps title "testbed, # of item to send at each second" lt 1 lc 1, \
+  "droppedValuesPerSecond.log" using 1:2 with boxes title "testbed, # of item dropped per second, as TCP socket was not ready" lt 1 lc 2
+
+""")
+
+    builder.append("""
+unset multiplot
+""")
+
+    builder.toString()
+  }
+}
