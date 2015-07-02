@@ -6,3 +6,5 @@
 target/
 bin/
 run.log
+application.log
+feedback.log
