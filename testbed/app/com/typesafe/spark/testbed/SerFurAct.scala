@@ -76,7 +76,7 @@ class Connection(socket: AsynchronousSocketChannel, connectionHandler: ActorRef)
           socket.close()
           connectionHandler ! Server.ConnectionClosedMsg
         } else {
-          // do do anything on incoming bytes, just wait for the end of the stream
+          // don't do anything on incoming bytes, just wait for the end of the stream
         	process()
         }
     }
