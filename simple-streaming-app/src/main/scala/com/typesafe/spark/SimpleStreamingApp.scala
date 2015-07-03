@@ -59,7 +59,7 @@ object SimpleStreamingApp {
   }
 
   private def format(batchTime: Long, stats: (Int, (Int, Long, Double, Double, Long))): String = {
-    s"${stats._2._5}\t$batchTime\t${stats._1}\t${stats._2._1}\t${stats._2._2}\t${stats._2._3}\t${stats._2._4}"
+    s"batch result: ${stats._2._5}\t$batchTime\t${stats._1}\t${stats._2._1}\t${stats._2._2}\t${stats._2._3}\t${stats._2._4}"
   }
 
   /**
