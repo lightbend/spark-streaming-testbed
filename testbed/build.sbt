@@ -3,7 +3,7 @@ lazy val root = (project in file(".")).
   settings(
     organization := "com.typesafe.spark",
     name := "spark-streaming-testbed",
-    version := "0.1.1",
+    version := "0.1.2",
     scalaVersion := "2.10.5",
     libraryDependencies ++= Seq(
       jdbc,

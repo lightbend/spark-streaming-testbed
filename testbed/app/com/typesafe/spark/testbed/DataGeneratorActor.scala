@@ -57,7 +57,11 @@ class DataGeneratorActor(scheduler: ActorRef) extends Actor {
       } else {
         // continue test plan
         val values = dataGenerator.valuesFor(tick)
-        logger.info(s"${values.map(_.values.size).sum} values for tick $tick")
+        
+        values.flatMap { _.values }.groupBy { x => x}.foreach{ t =>
+          logger.info(s"At tick $tick, ${t._2.size} times ${t._1}")
+        }
+        
         values.foreach { data =>
           scheduler ! EpochSchedulerActor.ScheduleMsg(data.shiftTime(startTime))
         }
