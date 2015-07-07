@@ -40,6 +40,8 @@ set y2tics
 set yrange [0:]
 set lmargin 12
 set rmargin 10
+set datafile missing "?"
+set style fill transparent solid 0.25
 
 set style arrow 1 nohead ls 1
 set ytics nomirror
@@ -71,6 +73,7 @@ plot "memory.log" using 1:(5000) with line lt 0 lc 3 title "batch interval", \
 set tmargin 0
 set ylabel "# of items"
 set y2label "drop ratio"
+set y2range [ 0 : 1.1 ]
 
 plot """)
 
@@ -78,10 +81,16 @@ plot """)
       builder.append(""""ratio.log" using 1:2 axes x1y2 with lines title "Congestion strategie - drop ratio, for each block" lt 1 lc rgb "#DDDDDD", \
   "ratio.log" u 1:2 axes x1y2 smooth bezier title "smoothed drop ratio" lt 1 lc "black", \
 """)
-    builder.append(""""execution.log" using 2:4 with line title "Spark - # of items processed per batch" lt 1 lc 3""")
-    if (!data.feedback.isEmpty)
+
+    val executionLines = data.executionMultipleValues.items.zipWithIndex.map{ t =>
+      s""""execution.log" using 2:($$${t._2 + 3}) with filledcurve x1 title "Spark - # of items ${t._1} processed per batch" lt 1 lc ${t._2 + 3}"""
+    }
+    builder.append(executionLines.mkString(""", \
+"""))
+
+   if (!data.feedback.isEmpty)
       builder.append(""", \
-  "feedback.log" using 1:($2 * 25) with lines title "Spark - feedback bound, max # of item per batch" lt 1 lc 4""")
+  "feedback.log" using 1:($2 * 25) with lines title "Spark - feedback bound, max # of item per batch" lt 1 lc 2""")
     builder.append("""
 
 """)
@@ -92,11 +101,12 @@ set xlabel "timeline (in milliseconds)"
 """)
 
     builder.append("""
-set xtics format "%g"
+set xtics format "%.0f"
 set bmargin 3
 set ylabel "# of items"
 unset y2label
 unset y2tics
+unset y2range
 
 """)
 
@@ -111,10 +121,14 @@ set y2range [ 0 : ${(maxdroppedValues * 1.2).toInt} ]
     builder.append("""
 set boxwidth 1000
 
-plot "tick.log" using 1:2 with steps title "testbed, # of item to send at each second" lt 1 lc 1, \
-  "droppedValuesPerSecond.log" using 1:2 with boxes title "testbed, # of item dropped per second, as TCP socket was not ready" lt 1 lc 2
-
+plot "droppedValuesPerSecond.log" using 1:2 with boxes title "testbed, # of item dropped per second, as TCP socket was not ready" lt 1 lc 1, \
 """)
+
+    val tickLines = data.tickMultipleValues.values.zipWithIndex.map{ t =>
+      s""""tick.log" using 1:($$${t._2 + 2}) with fillsteps title "testbed, # of item ${t._1} to send at each second" lt 1 lc ${t._2 + 3}"""
+    }
+    builder.append(tickLines.mkString(""", \
+"""))
 
     builder.append("""
 unset multiplot
