@@ -2,7 +2,7 @@ lazy val root = (project in file(".")).
   settings(
     organization := "com.typesafe.spark",
     name := "simple-streaming-app",
-    version := "0.1.6",
+    version := "0.1.7",
     scalaVersion := "2.10.5",
     resolvers += "bintray-typesafe-maven-releases" at "http://dl.bintray.com/typesafe/maven-releases",
     libraryDependencies ++= Seq(
