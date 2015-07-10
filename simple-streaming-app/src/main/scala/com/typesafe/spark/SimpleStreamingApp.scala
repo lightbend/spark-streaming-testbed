@@ -12,7 +12,8 @@ import org.apache.spark.streaming.dstream.DStream
 import scopt.OptionParser
 import scopt.Zero
 
-/** Simple statistics data class
+/**
+ * Simple statistics data class
  */
 private case class Stats(count: Int, sum: Long, mean: Double, stdDev: Double, millis: Long)
 
@@ -20,48 +21,50 @@ object SimpleStreamingApp {
 
   def main(args: Array[String]): Unit = {
 
+    // TODO: have different hostnames too
+
     val config = parseArgs(args)
 
     {
       import config._
       println(s"""
-        Connecting to $hostname:$port using Spark $master and $streams receivers.
+        Connecting to $hostname:${ports.mkString(",")} using Spark $master.
       """)
     }
     val conf = new SparkConf()
       .setAppName("Streaming tower of Hanoi resolution")
       .set("spark.streaming.receiver.congestionStrategy", config.strategy)
 
-     if (conf.getOption("spark.master").isEmpty)
-       conf.setMaster(config.master)
+    if (conf.getOption("spark.master").isEmpty)
+      conf.setMaster(config.master)
 
     val ssc = new StreamingContext(conf, Milliseconds(config.batchInterval))
 
-    // create n receivers, each one having more elements than the previous one
-    val rawInputs = for (i <- 1 to config.streams) yield
-      ssc.socketTextStream(config.hostname, config.port, StorageLevel.MEMORY_ONLY)
-         .flatMap(x => Seq.fill(1 + (i - 1) * config.step)(x))
+    val computedSTreams = config.ports.map { p =>
+      val lines = ssc.socketTextStream(config.hostname, p, StorageLevel.MEMORY_ONLY)
+      val streamId = lines.id
 
-    val lines = rawInputs.reduce(_ union _)
+      val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
 
-    val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
+      val hanoiTime = numbers.map { i =>
+        // keep track of time to compute
+        val startTime = System.currentTimeMillis()
 
-    val hanoiTime = numbers.map { i =>
-      // keep track of time to compute
-      val startTime = System.currentTimeMillis()
+        // resolve the tower of Hanoi
+        Hanoi.solve(i)
 
-      // resolve the tower of Hanoi
-      Hanoi.solve(i)
+        val executionTime = System.currentTimeMillis() - startTime
+        (i, executionTime)
+      }
+      hanoiTime.groupByKey().mapValues { stats }.map(t => (t._1, streamId, t._2))
 
-      val executionTime = System.currentTimeMillis() - startTime
-      (i, executionTime)
     }
 
-    val statsByValues: DStream[(Int, Stats)] = hanoiTime.groupByKey().mapValues { stats }
+    val allResults = computedSTreams.reduce(_ union _)
 
-    statsByValues.foreachRDD { (v, time) =>
+    allResults.foreachRDD { (v, time) =>
       if (!v.isEmpty()) {
-        v.collect.foreach(s => println(format(time.milliseconds, s._1, s._2)))
+        v.collect.foreach(s => println(format(time.milliseconds, s._1, s._2, s._3)))
       }
     }
 
@@ -78,11 +81,12 @@ object SimpleStreamingApp {
     System.exit(0)
   }
 
-  private def format(batchTime: Long, input: Int, stats: Stats): String = {
-    s"batch result: ${stats.millis}\t$batchTime\t$input\t${stats.count}\t${stats.sum}\t${stats.mean}\t${stats.stdDev}"
+  private def format(batchTime: Long, value: Int, streamId: Int, stats: Stats): String = {
+    s"batch result: ${stats.millis}\t$batchTime\t$value\t$streamId\t${stats.count}\t${stats.sum}\t${stats.mean}\t${stats.stdDev}"
   }
 
-  /** Returns count, sum, mean and standard deviation
+  /**
+   * Returns count, sum, mean and standard deviation
    *
    */
   private def stats(value: Iterable[Long]): Stats = {
@@ -95,7 +99,7 @@ object SimpleStreamingApp {
     Stats(count, sum, mean, stddev, System.currentTimeMillis())
   }
 
-  val DefaultConfig = Config("local[*]", "", -1, 1000, "ignore", 1, 1)
+  val DefaultConfig = Config("local[*]", "", Nil, 1000, "ignore", 1)
 
   private val parser = new OptionParser[Config]("simple-streaming") {
     help("help")
@@ -106,9 +110,9 @@ object SimpleStreamingApp {
       .action { (x, c) => c.copy(hostname = x) }
       .text("Hostname where receivers should connect")
 
-    opt[Int]('p', "port")
+    opt[Seq[Int]]('p', "ports")
       .required()
-      .action { (x, c) => c.copy(port = x) }
+      .action { (x, c) => c.copy(ports = x.to[List]) }
       .text("Port number to which receivers should connect")
 
     opt[String]('m', "master")
@@ -128,10 +132,6 @@ object SimpleStreamingApp {
     opt[Int]('b', "batch-interval")
       .action { (x, c) => c.copy(batchInterval = x) }
       .text("The batch interval in milliseconds.")
-
-    opt[(Int, Int)]('r', "receivers")
-      .action { (x, c) => c.copy(streams = x._1, step = x._2) }
-      .text("The number of receivers and the multiplier for stream elements, separated by `=`.")
 
   }
 

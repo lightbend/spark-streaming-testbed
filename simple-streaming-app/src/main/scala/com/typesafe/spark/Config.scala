@@ -3,8 +3,7 @@ package com.typesafe.spark
 case class Config(
     master: String,
     hostname: String,
-    port: Int,
+    ports: List[Int],
     batchInterval: Int,
     strategy: String,
-    streams: Int,
     step: Int)
