@@ -42,7 +42,7 @@ object SimpleStreamingApp {
 
     val computedSTreams = config.ports.map { p =>
       val lines = ssc.socketTextStream(config.hostname, p, StorageLevel.MEMORY_ONLY)
-      lines.attachRateEstimator(new PIDRateEstimator(-1D, 0D, 0D))
+//      lines.attachRateEstimator(new PIDRateEstimator(-1D, 0D, 0D))
       val streamId = lines.id
 
       val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
