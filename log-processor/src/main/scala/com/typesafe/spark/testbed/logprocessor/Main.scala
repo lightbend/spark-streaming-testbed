@@ -97,12 +97,12 @@ plot """)
       val executionLines = stream.execution.values.zipWithIndex.map { t =>
         s""""execution_$id.log" using 2:($$${t._2 + 3}) with filledcurve x1 title "Spark - # of items ${t._1} processed per batch" lt 1 lc ${t._2 + 3}"""
       }
-      builder.append(executionLines.mkString(""", \\
+      builder.append(executionLines.mkString(""", \
 """))
 
       if (!stream.feedback.isEmpty)
         builder.append(s""", \\
-  "feedback_$id.log" using 1:($$2 * 25) with lines title "Spark - feedback bound, max # of item per batch" lt 1 lc 2""")
+  "feedback_$id.log" using 1:($$2 * 5) with lines title "Spark - feedback bound, max # of item per batch" lt 1 lc 2""")
       builder.append("""
 
 """)

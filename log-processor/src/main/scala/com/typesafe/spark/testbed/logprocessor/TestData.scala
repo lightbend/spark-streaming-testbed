@@ -177,6 +177,7 @@ object TestData {
     val receiverFeedback = receiverAllLines
       .filter(_.contains("Received update"))
       .map(ReceiverLogData.parseFeedback(_))
+      .filterNot { _.limit == 0 }
       .to[List]
 
     val receiverRatio = receiverAllLines

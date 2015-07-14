@@ -18,7 +18,7 @@ object ReceiverLogData {
   
   private val dateParser = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSSZ")
   
-  private val feedbackRegex = "([^ ]* [^ ]*).*update for (\\d*) at.*: (\\d*)".r
+  private val feedbackRegex = "([^ ]* [^ ]*).*update for (\\d*) : (\\d*)".r
   private val ratioRegex = "([^ ]* [^ ]*).*stream (\\d*).*with ratio of ([\\d.]*)\\.".r
   
   def parseFeedback(line: String): FeedbackLogData = {
