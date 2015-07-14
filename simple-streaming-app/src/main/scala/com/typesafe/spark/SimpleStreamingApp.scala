@@ -2,6 +2,7 @@ package com.typesafe.spark
 
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.streaming.scheduler.rate.PIDRateEstimator
 import org.apache.spark.streaming.Milliseconds
 import scala.util.Try
 import scala.concurrent.Future
@@ -33,7 +34,6 @@ object SimpleStreamingApp {
     }
     val conf = new SparkConf()
       .setAppName("Streaming tower of Hanoi resolution")
-      .set("spark.streaming.receiver.congestionStrategy", config.strategy)
 
     if (conf.getOption("spark.master").isEmpty)
       conf.setMaster(config.master)
@@ -42,6 +42,7 @@ object SimpleStreamingApp {
 
     val computedSTreams = config.ports.map { p =>
       val lines = ssc.socketTextStream(config.hostname, p, StorageLevel.MEMORY_ONLY)
+      lines.attachRateEstimator(new PIDRateEstimator())
       val streamId = lines.id
 
       val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
