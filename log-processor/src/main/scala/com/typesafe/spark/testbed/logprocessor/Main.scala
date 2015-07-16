@@ -22,7 +22,7 @@ object Main {
 
     // dump in files the data needed by gnuplot
     data.dump(workFolder)
-    
+
     // generate the gnuplot scripte
     val gsWriter = new FileWriter(new File(workFolder, "graph.gnuplot"))
     gsWriter.write(generateGnuplotScript(data, title))
@@ -34,6 +34,7 @@ object Main {
   }
 
   private def generateGnuplotScript(data: TestData, title: String): String = {
+
     val builder = new StringBuilder("""
 set y2range [0:]
 set y2tics
@@ -45,12 +46,15 @@ set style fill transparent solid 0.25
 
 set style arrow 1 nohead ls 1
 set ytics nomirror
-
-set terminal pngcairo dashed enhanced font "arial,10" fontscale 1.0 size 1500,1000
+""")
+    builder.append(s"""
+set terminal pngcairo dashed enhanced font "arial,10" fontscale 1.0 size 1500,${data.dataPerStream.size * 333 + 666}
+""")
+    builder.append("""
 set output "graph.png"
 """)
     builder.append(s"""
-set multiplot layout 3, 1 title "$title"
+set multiplot layout ${data.dataPerStream.size + 2}, 1 title "$title"
 """)
 
     builder.append(s"""
@@ -75,25 +79,34 @@ set ylabel "# of items"
 set y2label "drop ratio"
 set y2range [ 0 : 1.1 ]
 
+""")
+
+    var column = 3
+    data.dataPerStream.foreach { stream =>
+
+      val id = stream.streamId
+
+      builder.append("""
 plot """)
 
-    if (!data.ratio.isEmpty)
-      builder.append(""""ratio.log" using 1:2 axes x1y2 with lines title "Congestion strategie - drop ratio, for each block" lt 1 lc rgb "#DDDDDD", \
-  "ratio.log" u 1:2 axes x1y2 smooth bezier title "smoothed drop ratio" lt 1 lc "black", \
+      if (!stream.ratio.isEmpty)
+        builder.append(s""""ratio_${stream.streamId}.log" using 1:2 axes x1y2 with lines title "Congestion strategie - drop ratio, for each block" lt 1 lc rgb "#DDDDDD", \\
+  "ratio_$id.log" u 1:2 axes x1y2 smooth bezier title "smoothed drop ratio" lt 1 lc "black", \\
 """)
 
-    val executionLines = data.executionMultipleValues.items.zipWithIndex.map{ t =>
-      s""""execution.log" using 2:($$${t._2 + 3}) with filledcurve x1 title "Spark - # of items ${t._1} processed per batch" lt 1 lc ${t._2 + 3}"""
-    }
-    builder.append(executionLines.mkString(""", \
+      val executionLines = stream.execution.values.zipWithIndex.map { t =>
+        s""""execution_$id.log" using 2:($$${t._2 + 3}) with filledcurve x1 title "Spark - # of items ${t._1} processed per batch" lt 1 lc ${t._2 + 3}"""
+      }
+      builder.append(executionLines.mkString(""", \\
 """))
 
-   if (!data.feedback.isEmpty)
-      builder.append(""", \
-  "feedback.log" using 1:($2 * 25) with lines title "Spark - feedback bound, max # of item per batch" lt 1 lc 2""")
-    builder.append("""
+      if (!stream.feedback.isEmpty)
+        builder.append(s""", \\
+  "feedback_$id.log" using 1:($$2 * 25) with lines title "Spark - feedback bound, max # of item per batch" lt 1 lc 2""")
+      builder.append("""
 
 """)
+    }
 
     builder.append("""
 set xlabel "timeline (in milliseconds)"
@@ -124,7 +137,7 @@ set boxwidth 1000
 plot "droppedValuesPerSecond.log" using 1:2 with boxes title "testbed, # of item dropped per second, as TCP socket was not ready" lt 1 lc 1, \
 """)
 
-    val tickLines = data.tickMultipleValues.values.zipWithIndex.map{ t =>
+    val tickLines = data.tickMultipleValues.values.zipWithIndex.map { t =>
       s""""tick.log" using 1:($$${t._2 + 2}) with fillsteps title "testbed, # of item ${t._1} to send at each second" lt 1 lc ${t._2 + 3}"""
     }
     builder.append(tickLines.mkString(""", \

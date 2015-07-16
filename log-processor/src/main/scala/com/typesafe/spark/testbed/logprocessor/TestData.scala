@@ -4,6 +4,13 @@ import java.io.File
 import scala.io.Source
 import java.io.FileWriter
 import scala.annotation.tailrec
+import java.io.FilenameFilter
+
+case class StreamData(
+  streamId: Int,
+  execution: ExecutionMultipleValuesData,
+  feedback: List[FeedbackLogData],
+  ratio: List[RatioLogData])
 
 case class TestData(
   memory: List[MemoryLogData],
@@ -21,11 +28,22 @@ case class TestData(
     unordered.sortBy(_.time)
   }
 
-  lazy val executionMultipleValues: ExecutionMultipleValuesData =
-    ExecutionMultipleValuesData(execution)
-
   lazy val tickMultipleValues: TickMultipleValuesData =
     TickMultipleValuesData(tick)
+
+  lazy val dataPerStream: List[StreamData] = {
+    val streamIds = execution.map(_.streamId).distinct.sorted
+
+    streamIds.map { id =>
+
+      val executionForStream = ExecutionMultipleValuesData(execution.filter(_.streamId == id))
+
+      val feedbackForStream = feedback.filter(_.streamId == id)
+      val ratioForStream = ratio.filter(_.streamId == id)
+
+      StreamData(id, executionForStream, feedbackForStream, ratioForStream)
+    }
+  }
 
   /**
    * Change the data such as time 0 is the time of the first processed batch.
@@ -47,12 +65,15 @@ case class TestData(
   def dump(workFolder: File): Unit = {
     workFolder.mkdirs()
     TestData.dump(memory, new File(workFolder, "memory.log"))
-    TestData.dump(executionMultipleValues.entries, new File(workFolder, "execution.log"))
+    TestData.dump(ExecutionTimeData(execution), new File(workFolder, "execution.log"))
     TestData.dump(tickMultipleValues.entries, new File(workFolder, "tick.log"))
     TestData.dump(droppedValues, new File(workFolder, "droppedValues.log"))
     TestData.dump(droppedValuesPerSecond, new File(workFolder, "droppedValuesPerSecond.log"))
-    TestData.dump(feedback, new File(workFolder, "feedback.log"))
-    TestData.dump(ratio, new File(workFolder, "ratio.log"))
+    dataPerStream.foreach { stream =>
+      TestData.dump(stream.execution.entries, new File(workFolder, s"execution_${stream.streamId}.log"))
+      TestData.dump(stream.feedback, new File(workFolder, s"feedback_${stream.streamId}.log"))
+      TestData.dump(stream.ratio, new File(workFolder, s"ratio_${stream.streamId}.log"))
+    }
   }
 
   /**
@@ -112,6 +133,8 @@ trait MultipleItemsLogData[A] extends LogData[A] {
 
 object TestData {
 
+  val RECEIVER_LOG_REGEX = "receiver(_\\d)?.log".r.anchored
+
   /**
    * Load the data contained in the log files from the given folder.
    */
@@ -140,7 +163,16 @@ object TestData {
       .map(ApplicationLogData.parseDroppedValues(_))
       .to[List]
 
-    val receiverAllLines = Source.fromFile(new File(baseFolder, "receiver.log")).getLines().toStream
+    val receiverFiles = baseFolder.listFiles(new FilenameFilter {
+      def accept(dir: File, name: String): Boolean = {
+        RECEIVER_LOG_REGEX.unapplySeq(name).isDefined
+      }
+    })
+
+    val receiverAllLines =
+      receiverFiles.to[List]
+        .map { f => Source.fromFile(f).getLines().toStream }
+        .foldLeft(Stream[String]())(_.append(_))
 
     val receiverFeedback = receiverAllLines
       .filter(_.contains("Received update"))
