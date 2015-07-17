@@ -3,6 +3,7 @@
 .classpath
 .project
 .history
+.settings
 target/
 bin/
 run.log
