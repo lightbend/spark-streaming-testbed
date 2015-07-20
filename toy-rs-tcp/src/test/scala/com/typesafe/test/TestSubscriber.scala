@@ -6,6 +6,7 @@ import java.util.concurrent.CountDownLatch
 import org.scalatest.Assertions._
 import scala.collection.immutable.Queue
 import scala.annotation.tailrec
+import java.util.concurrent.TimeUnit
 
 class TestSubscriber extends Subscriber[String] {
 
@@ -16,8 +17,10 @@ class TestSubscriber extends Subscriber[String] {
   var receivedItems: Queue[String] = Queue()
   val receivedItemsLock = new Object
 
+  val onCompleteLatch = new CountDownLatch(1)
+
   def onComplete(): Unit = {
-    ???
+    onCompleteLatch.countDown()
   }
 
   def onError(t: Throwable): Unit = {
@@ -26,7 +29,6 @@ class TestSubscriber extends Subscriber[String] {
 
   def onNext(t: String): Unit = {
     receivedItemsLock synchronized {
-      println(s"On next $t")
       receivedItems = receivedItems.enqueue(t)
       receivedItemsLock.notify()
     }
@@ -84,7 +86,6 @@ class TestSubscriber extends Subscriber[String] {
         if (receivedItems.size > 0) {
           fail("received unexpected messages")
         } else {
-          println(s"waiting for $waitTime")
           receivedItemsLock.wait(waitTime)
           checkEmpty()
         }
@@ -107,5 +108,10 @@ class TestSubscriber extends Subscriber[String] {
   // test method
   def cancel = {
     subscription.cancel()
+  }
+
+  // test method
+  def waitCompleted(wait: Long) = {
+    onCompleteLatch.await(wait, TimeUnit.SECONDS)
   }
 }

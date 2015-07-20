@@ -33,14 +33,19 @@ class TestSubscription(subscriber: Subscriber[_ >: String], publisher: TestPubli
     }
   }
   
+  // internal method
   private def pushNexts() {
     val toSend = pendingRequests min pendingItems.size
     (0 until toSend.toInt) foreach { _ =>
        val (item, remainder) = pendingItems.dequeue
        pendingItems = remainder
-       println(s"pushing $item")
        subscriber.onNext(item)
      }
      pendingRequests -= toSend
+  }
+
+  // internal method
+  def complete = {
+    subscriber.onComplete()
   }
 }

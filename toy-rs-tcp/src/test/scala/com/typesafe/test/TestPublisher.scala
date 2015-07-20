@@ -24,10 +24,19 @@ class TestPublisher extends Publisher[String] {
     }
   }
 
+  // test method
+  def complete() {
+    subscriptions synchronized{
+      subscriptions.foreach { _.complete }
+      subscriptions = Nil
+    }
+  }
+
   // internal method
   def removeSubscription(subscription: TestSubscription) = {
     subscriptionsLock synchronized {
       subscriptions = subscriptions.filterNot { _ == subscription }
     }
   }
+
 }

@@ -9,7 +9,6 @@ class Subscription(socket: AsynchronousSocketChannel) extends org.reactivestream
   }
 
   def request(n: Long): Unit = {
-    println(s"request: ${s"$n\n"}")
     socket.write(ByteBuffer.wrap(s"$n\n".getBytes))
   }
 }

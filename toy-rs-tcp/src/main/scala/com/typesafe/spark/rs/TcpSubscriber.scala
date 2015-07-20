@@ -48,7 +48,6 @@ class TcpSubscriber(socket: AsynchronousSocketChannel) extends Subscriber[String
           def readChars(toRead: Int, acc: StringBuilder): String = {
             if (toRead > 0) {
               val b = buffer.get
-              println(s"byte: $b")
               val c = b.toChar
               if (c == '\n') {
                 // TODO: value check
