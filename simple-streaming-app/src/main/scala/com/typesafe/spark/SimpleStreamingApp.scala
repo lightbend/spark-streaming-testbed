@@ -14,6 +14,7 @@ import scopt.OptionParser
 import scopt.Zero
 import com.typesafe.spark.rs.TcpPublisher
 import com.typesafe.spark.rs.SubscriberInputDStream
+import org.reactivestreams.Publisher
 
 /**
  * Simple statistics data class
@@ -44,7 +45,11 @@ object SimpleStreamingApp {
 
     val computedSTreams = config.ports.map { p =>
 //      val lines = ssc.socketTextStream(config.hostname, p, StorageLevel.MEMORY_ONLY)
-      val lines = new SubscriberInputDStream(ssc, StorageLevel.MEMORY_ONLY)(() => new TcpPublisher(config.hostname, p))
+      val lines = new SubscriberInputDStream(ssc, StorageLevel.MEMORY_ONLY)({
+        val h = config.hostname
+        val po = p
+        val f = () => new TcpPublisher(h, po)
+        f})
       lines.attachRateEstimator(new PIDRateEstimator())
       val streamId = lines.id
 
