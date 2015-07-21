@@ -12,6 +12,8 @@ import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.dstream.DStream
 import scopt.OptionParser
 import scopt.Zero
+import com.typesafe.spark.rs.TcpPublisher
+import com.typesafe.spark.rs.SubscriberInputDStream
 
 /**
  * Simple statistics data class
@@ -41,8 +43,9 @@ object SimpleStreamingApp {
     val ssc = new StreamingContext(conf, Milliseconds(config.batchInterval))
 
     val computedSTreams = config.ports.map { p =>
-      val lines = ssc.socketTextStream(config.hostname, p, StorageLevel.MEMORY_ONLY)
-//      lines.attachRateEstimator(new PIDRateEstimator(-1D, 0D, 0D))
+//      val lines = ssc.socketTextStream(config.hostname, p, StorageLevel.MEMORY_ONLY)
+      val lines = new SubscriberInputDStream(ssc, StorageLevel.MEMORY_ONLY)(() => new TcpPublisher(config.hostname, p))
+      lines.attachRateEstimator(new PIDRateEstimator())
       val streamId = lines.id
 
       val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
