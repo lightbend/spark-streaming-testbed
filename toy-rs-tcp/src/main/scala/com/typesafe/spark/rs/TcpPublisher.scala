@@ -57,6 +57,7 @@ class TcpPublisher(hostname: String, port: Int) extends Publisher[String] {
             if (toRead > 0) {
               val c = buffer.get.toChar
               if (c == '\n') {
+                // TODO: check value
                 subscriber.onNext(acc.toString())
                 readChars(toRead - 1, new StringBuilder)
               } else {
