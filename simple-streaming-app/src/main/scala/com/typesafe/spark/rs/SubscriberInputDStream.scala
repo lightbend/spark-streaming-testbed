@@ -43,7 +43,8 @@ private[rs] class SubscriberReceiver[T](
   override def useRateLimiterInReceiver: Boolean = true
 
   override def updateRateLimit(eps: Long): Unit = {
-    internalSubscriber.updateRateLimit(eps)
+    if (eps > 0)
+      internalSubscriber.updateRateLimit(eps)
   }
 }
 
@@ -76,6 +77,10 @@ private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) exten
     lock synchronized {
       elementInSecond += 1
       requestedElements -= 1
+      if (requestedElements < 0) {
+        subscription.cancel()
+        subscriber.restart("Bad producer, too many items")
+      }
       computeNewRequests(withDelay = true)
     }
   }
@@ -107,6 +112,7 @@ private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) exten
           if (withDelay == true)
             // TODO: bad wait. Should be pushed on some clock
             lock.wait((expectedExhauctionTime - elapsedTimeInSecond).toInt)
+            requestItems(sliceSize)
         } else {
           if (expectedExhauctionTime > elapsedTimeInSecond) {
             // do nothing, data is already coming too fast
