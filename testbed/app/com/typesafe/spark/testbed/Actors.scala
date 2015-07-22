@@ -24,9 +24,11 @@ class Actors(app: Application) extends Plugin {
 
   private def socketPort = app.configuration.getInt("testbed.port").getOrElse(2222)
 
+  private def reactiveSocketPort = app.configuration.getInt("testbed.reactiveport").getOrElse(2223)
+
   private lazy val dataGenerator = system.actorOf(DataGeneratorActor.props(scheduler), "dataGenerator")
 
-  private lazy val serverManager = system.actorOf(ServerManagerActor.props(socketPort), "serverManager")
+  private lazy val serverManager = system.actorOf(ServerManagerActor.props(socketPort, reactiveSocketPort), "serverManager")
 
   private lazy val scheduler = system.actorOf(EpochSchedulerActor.props(serverManager), "scheduler")
 

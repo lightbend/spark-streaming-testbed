@@ -19,13 +19,13 @@ Usage:
 
   def main(args: Array[String]): Unit = {
 
-    val (testPlanFile, port) = parseArgs(args)
+    val (testPlanFile, port, reactivePort) = parseArgs(args)
 
     val testPlan = TestPlan.parse(testPlanFile)
 
     val system = ActorSystem("testbed")
 
-    val serverManager = system.actorOf(ServerManagerActor.props(port), "serverManager")
+    val serverManager = system.actorOf(ServerManagerActor.props(port, reactivePort), "serverManager")
     val scheduler = system.actorOf(EpochSchedulerActor.props(serverManager), "scheduler")
     val dataGenerator = system.actorOf(DataGeneratorActor.props(scheduler), "dataGenerator")
 
@@ -43,10 +43,10 @@ Usage:
 
   }
 
-  private def parseArgs(args: Array[String]): (File, Int) = {
-    if (args.size < 2) {
+  private def parseArgs(args: Array[String]): (File, Int, Int) = {
+    if (args.size < 3) {
       usageAndExit("Missing parameters")
-    } else if (args.size > 2) {
+    } else if (args.size > 3) {
       usageAndExit("Too many parameters")
     } else {
       val testPlanFile = new File(args(0))
@@ -55,10 +55,13 @@ Usage:
       }
       try {
         val port = args(1).toInt
+        val reactivePort = args(2).toInt
         if (port < 1 || port > 65535) {
-          usageAndExit(s"${args(1)} is not a valid port")
+          usageAndExit(s"${port} is not a valid port")
+        } else if (reactivePort < 1 || reactivePort > 65535) {
+          usageAndExit(s"${reactivePort} is not a valid port")
         } else {
-          (testPlanFile, port)
+          (testPlanFile, port, reactivePort)
         }
       } catch {
         case e: NumberFormatException =>

@@ -12,6 +12,9 @@ import scala.collection.mutable
 import scala.annotation.tailrec
 import play.api.Logger
 import scala.concurrent.Promise
+import com.typesafe.spark.rs.TcpSubscriberFactory
+import org.reactivestreams.Subscriber
+import org.reactivestreams.Subscription
 
 class DataGeneratorActor(scheduler: ActorRef) extends Actor {
 
@@ -143,25 +146,32 @@ object EpochSchedulerActor {
   def props(serverManager: ActorRef) = Props(classOf[EpochSchedulerActor], serverManager)
 }
 
-class ServerManagerActor(socketPort: Int) extends Actor {
+class ServerManagerActor(socketPort: Int, reactiveSocketPort: Int) extends Actor {
 
   def receive = initialization
 
   val initialization: Actor.Receive = {
     case ServerManagerActor.StartMsg =>
       val server = Server(self, socketPort)
-      context.become(processConnectionsAndData(server, Nil))
+      val reactiveServer = TcpSubscriberFactory(reactiveSocketPort)
+      reactiveServer.onConnect { sub => self ! ServerManagerActor.IncomingSubscriber(sub) }
+      context.become(processConnectionsAndData(server, reactiveServer,  Nil))
   }
 
-  def processConnectionsAndData(server: Server, connectionActors: List[ActorRef]): Actor.Receive = {
+  def processConnectionsAndData(server: Server, reactiveServer: TcpSubscriberFactory, connectionActors: List[ActorRef]): Actor.Receive = {
     case Server.IncomingConnectionMsg(socket) =>
       val connectionActor = context.actorOf(ConnectionManagerActor.props(socket, self))
-      context.become(processConnectionsAndData(server, connectionActor :: connectionActors))
+      context.become(processConnectionsAndData(server, reactiveServer, connectionActor :: connectionActors))
+    case ServerManagerActor.IncomingSubscriber(sub) =>
+      val subscriberActor = context.actorOf(SubscriberActor.props(sub, self))
+      subscriberActor ! SubscriberActor.StartMsg
+      context.become(processConnectionsAndData(server, reactiveServer, subscriberActor :: connectionActors))
     case ServerManagerActor.ConnectionClosedMsg(connectionActor) =>
-      context.become(processConnectionsAndData(server, connectionActors.filterNot { _ == connectionActor }))
+      context.become(processConnectionsAndData(server, reactiveServer, connectionActors.filterNot { _ == connectionActor }))
     case ServerManagerActor.StopMsg =>
       connectionActors.foreach { _ ! ServerManagerActor.StopMsg }
       server.close()
+      reactiveServer.stop()
       context.become(initialization)
     case m: ServerManagerActor.SendInts =>
       connectionActors.foreach { _ ! m }
@@ -173,10 +183,11 @@ object ServerManagerActor {
 
   case object StartMsg
   case object StopMsg
+  case class IncomingSubscriber(subscriber: Subscriber[String])
   case class ConnectionClosedMsg(connectionActor: ActorRef)
   case class SendInts(is: List[Int])
 
-  def props(socketPort: Int) = Props(classOf[ServerManagerActor], socketPort)
+  def props(socketPort: Int, reactiveSocketPort: Int) = Props(classOf[ServerManagerActor], socketPort, reactiveSocketPort)
 }
 
 class ConnectionManagerActor(socket: AsynchronousSocketChannel, serverManager: ActorRef) extends Actor {
@@ -225,4 +236,65 @@ object ConnectionManagerActor {
   case object DataWritten
 
   def props(socket: AsynchronousSocketChannel, serverManager: ActorRef) = Props(classOf[ConnectionManagerActor], socket, serverManager)
+}
+
+class SubscriberActor(sub: Subscriber[String], serverManager: ActorRef) extends Actor {
+
+  val logger: Logger = Logger(this.getClass)
+
+  def receive = initialization
+
+  val initialization: Actor.Receive = {
+    case SubscriberActor.StartMsg =>
+      println("initialize subscriber")
+      val subscription = new SubscriberActorSubscription(self)
+      sub.onSubscribe(subscription)
+      context.become(processing(0))
+  }
+
+  def processing(requested: Long): Actor.Receive = {
+    case SubscriberActor.RequestMsg(n) =>
+      logger.info(s"received request for $n values")
+      context.become(processing(requested + n))
+    case ServerManagerActor.SendInts(is) =>
+      val nbToSend = is.size
+      if (requested == 0) {
+        logger.warn(s"unable to deliver $nbToSend values")
+      } else {
+        if (nbToSend > requested) {
+          is.take(requested.toInt).foreach { i =>
+            sub.onNext(i.toString)
+          }
+          context.become(processing(0))
+        } else {
+          is.foreach { i =>
+            sub.onNext(i.toString)
+          }
+          context.become(processing(requested - nbToSend))
+        }
+      }
+    case ServerManagerActor.StopMsg =>
+      sub.onComplete()
+      self ! PoisonPill
+  }
+
+}
+
+class SubscriberActorSubscription(subscriberActor: ActorRef) extends Subscription {
+  def cancel(): Unit = {
+    subscriberActor ! SubscriberActor.CancelMsg
+  }
+
+  def request(n: Long): Unit = {
+    subscriberActor ! SubscriberActor.RequestMsg(n)
+  }
+}
+
+object SubscriberActor {
+
+  case object StartMsg
+  case object CancelMsg
+  case class RequestMsg(n: Long)
+
+  def props(sub: Subscriber[String], serverManager: ActorRef) = Props(classOf[SubscriberActor], sub, serverManager)
 }
