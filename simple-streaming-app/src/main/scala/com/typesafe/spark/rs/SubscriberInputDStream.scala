@@ -111,6 +111,7 @@ private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) exten
         if (requestedElements == 0) {
           if (withDelay == true)
             // TODO: bad wait. Should be pushed on some clock
+            logInfo(s"waiting ${expectedExhauctionTime - elapsedTimeInSecond}")
             lock.wait((expectedExhauctionTime - elapsedTimeInSecond).toInt)
             requestItems(sliceSize)
         } else {
