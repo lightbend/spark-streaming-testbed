@@ -155,19 +155,19 @@ class ServerManagerActor(socketPort: Int, reactiveSocketPort: Int) extends Actor
       val server = Server(self, socketPort)
       val reactiveServer = TcpSubscriberFactory(reactiveSocketPort)
       reactiveServer.onConnect { sub => self ! ServerManagerActor.IncomingSubscriber(sub) }
-      context.become(processConnectionsAndData(server, reactiveServer,  Nil))
+      context.become(processConnectionsAndData(server, reactiveServer, 0, Nil))
   }
 
-  def processConnectionsAndData(server: Server, reactiveServer: TcpSubscriberFactory, connectionActors: List[ActorRef]): Actor.Receive = {
+  def processConnectionsAndData(server: Server, reactiveServer: TcpSubscriberFactory, nextClientId: Int, connectionActors: List[ActorRef]): Actor.Receive = {
     case Server.IncomingConnectionMsg(socket) =>
-      val connectionActor = context.actorOf(ConnectionManagerActor.props(socket, self))
-      context.become(processConnectionsAndData(server, reactiveServer, connectionActor :: connectionActors))
+      val connectionActor = context.actorOf(ConnectionManagerActor.props(socket, nextClientId, self))
+      context.become(processConnectionsAndData(server, reactiveServer, nextClientId + 1, connectionActor :: connectionActors))
     case ServerManagerActor.IncomingSubscriber(sub) =>
-      val subscriberActor = context.actorOf(SubscriberActor.props(sub, self))
+      val subscriberActor = context.actorOf(SubscriberActor.props(sub, nextClientId, self))
       subscriberActor ! SubscriberActor.StartMsg
-      context.become(processConnectionsAndData(server, reactiveServer, subscriberActor :: connectionActors))
+      context.become(processConnectionsAndData(server, reactiveServer, nextClientId + 1, subscriberActor :: connectionActors))
     case ServerManagerActor.ConnectionClosedMsg(connectionActor) =>
-      context.become(processConnectionsAndData(server, reactiveServer, connectionActors.filterNot { _ == connectionActor }))
+      context.become(processConnectionsAndData(server, reactiveServer, nextClientId, connectionActors.filterNot { _ == connectionActor }))
     case ServerManagerActor.StopMsg =>
       connectionActors.foreach { _ ! ServerManagerActor.StopMsg }
       server.close()
@@ -190,7 +190,7 @@ object ServerManagerActor {
   def props(socketPort: Int, reactiveSocketPort: Int) = Props(classOf[ServerManagerActor], socketPort, reactiveSocketPort)
 }
 
-class ConnectionManagerActor(socket: AsynchronousSocketChannel, serverManager: ActorRef) extends Actor {
+class ConnectionManagerActor(socket: AsynchronousSocketChannel, id: Int, serverManager: ActorRef) extends Actor {
 
   val logger: Logger = Logger(this.getClass)
 
@@ -226,7 +226,7 @@ class ConnectionManagerActor(socket: AsynchronousSocketChannel, serverManager: A
       context.become(readyToWrite)
     case ServerManagerActor.SendInts(is) =>
       // TODO: it would be good to be able to delay data a bit. Maybe
-      logger.warn(s"unable to deliver ${is.size} values")
+      logger.warn(s"unable to deliver ${is.size} values to client $id")
   }
 
 }
@@ -235,10 +235,10 @@ object ConnectionManagerActor {
 
   case object DataWritten
 
-  def props(socket: AsynchronousSocketChannel, serverManager: ActorRef) = Props(classOf[ConnectionManagerActor], socket, serverManager)
+  def props(socket: AsynchronousSocketChannel, id: Int, serverManager: ActorRef) = Props(classOf[ConnectionManagerActor], socket, id, serverManager)
 }
 
-class SubscriberActor(sub: Subscriber[String], serverManager: ActorRef) extends Actor {
+class SubscriberActor(sub: Subscriber[String], id: Int, serverManager: ActorRef) extends Actor {
 
   val logger: Logger = Logger(this.getClass)
 
@@ -246,7 +246,7 @@ class SubscriberActor(sub: Subscriber[String], serverManager: ActorRef) extends 
 
   val initialization: Actor.Receive = {
     case SubscriberActor.StartMsg =>
-      println("initialize subscriber")
+      logger.info(s"initialize client $id (subscriber)")
       val subscription = new SubscriberActorSubscription(self)
       sub.onSubscribe(subscription)
       context.become(processing(0))
@@ -254,12 +254,12 @@ class SubscriberActor(sub: Subscriber[String], serverManager: ActorRef) extends 
 
   def processing(requested: Long): Actor.Receive = {
     case SubscriberActor.RequestMsg(n) =>
-      logger.info(s"received request for $n values")
+      logger.info(s"received request for $n values from client $id")
       context.become(processing(requested + n))
     case ServerManagerActor.SendInts(is) =>
       val nbToSend = is.size
       if (requested == 0) {
-        logger.warn(s"unable to deliver $nbToSend values")
+        logger.warn(s"unable to deliver $nbToSend values to client $id")
       } else {
         if (nbToSend > requested) {
           is.take(requested.toInt).foreach { i =>
@@ -273,6 +273,9 @@ class SubscriberActor(sub: Subscriber[String], serverManager: ActorRef) extends 
           context.become(processing(requested - nbToSend))
         }
       }
+    case SubscriberActor.CancelMsg =>
+      serverManager ! ServerManagerActor.ConnectionClosedMsg(self)
+      self ! PoisonPill
     case ServerManagerActor.StopMsg =>
       sub.onComplete()
       self ! PoisonPill
@@ -296,5 +299,5 @@ object SubscriberActor {
   case object CancelMsg
   case class RequestMsg(n: Long)
 
-  def props(sub: Subscriber[String], serverManager: ActorRef) = Props(classOf[SubscriberActor], sub, serverManager)
+  def props(sub: Subscriber[String], id: Int, serverManager: ActorRef) = Props(classOf[SubscriberActor], sub, id, serverManager)
 }
