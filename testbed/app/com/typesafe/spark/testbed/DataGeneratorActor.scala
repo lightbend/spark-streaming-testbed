@@ -265,6 +265,7 @@ class SubscriberActor(sub: Subscriber[String], id: Int, serverManager: ActorRef)
           is.take(requested.toInt).foreach { i =>
             sub.onNext(i.toString)
           }
+          logger.warn(s"unable to deliver ${nbToSend - requested} values to client $id")
           context.become(processing(0))
         } else {
           is.foreach { i =>
