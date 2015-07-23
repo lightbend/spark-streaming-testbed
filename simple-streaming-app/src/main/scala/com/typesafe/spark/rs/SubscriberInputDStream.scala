@@ -51,13 +51,14 @@ private[rs] class SubscriberReceiver[T](
 private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) extends Subscriber[T] with Logging {
 
   // TODO: make it configurable
-  var elementPerSecond: Long = 100000
-  var sliceSize: Long = elementPerSecond / 100
+  var elementPerSecond: Long = 10000
+  var sliceSize: Long = elementPerSecond / 10
 
   // initialized on onSubscribe
   var secondStart: Long = 0
   var elementInSecond: Long = 0
   var requestedElements: Long = 0
+  var nextCheck: Long = 0
 
   val lock = new Object()
 
@@ -89,7 +90,7 @@ private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) exten
     subscription = sub
     lock synchronized {
       secondStart = System.currentTimeMillis()
-      requestedElements = sliceSize * 2
+      logInfo(s"second start $secondStart")
       requestItems(sliceSize * 2)
     }
   }
@@ -99,27 +100,32 @@ private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) exten
   }
 
   private def computeNewRequests(withDelay: Boolean): Unit = {
-    if (requestedElements <= sliceSize) {
+    if (requestedElements <= nextCheck) {
+      logInfo(s"requestedElements $requestedElements")
       val elapsedTimeInSecond = System.currentTimeMillis() - secondStart
       if (elapsedTimeInSecond > 1000) {
-        secondStart += elapsedTimeInSecond % 1000 * 1000
+        secondStart += elapsedTimeInSecond
+        logInfo(s"new second start $elapsedTimeInSecond $secondStart ${System.currentTimeMillis}")
+        elementInSecond = 0
         val toRequest = sliceSize * 2 - requestedElements
-        requestedElements += toRequest
-        requestItems(toRequest)
+        if (toRequest > 0) {
+          requestItems(toRequest)
+        }
       } else {
         val expectedExhauctionTime = 1000D * elementInSecond / elementPerSecond
+        logInfo(s"wait computation: $elementInSecond $elementPerSecond $expectedExhauctionTime $elapsedTimeInSecond")
         if (requestedElements == 0) {
           if (withDelay == true)
             // TODO: bad wait. Should be pushed on some clock
             logInfo(s"waiting ${expectedExhauctionTime - elapsedTimeInSecond}")
-            lock.wait((expectedExhauctionTime - elapsedTimeInSecond).toInt)
+            lock.wait((expectedExhauctionTime - elapsedTimeInSecond).toInt + 1)
             requestItems(sliceSize)
         } else {
           if (expectedExhauctionTime > elapsedTimeInSecond) {
             // do nothing, data is already coming too fast
+            nextCheck = requestedElements / 2
           } else {
             val toRequest = (elementPerSecond - elementInSecond) min sliceSize
-            requestedElements += toRequest
             requestItems(toRequest)
           }
         }
@@ -129,13 +135,15 @@ private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) exten
   
   private def requestItems(number: Long): Unit = {
     logInfo(s"requesting $number items")
+    requestedElements += number
+    nextCheck = requestedElements / 2
     subscription.request(number)
   }
 
   def updateRateLimit(eps: Long): Unit = {
     lock synchronized {
       elementPerSecond = eps
-      sliceSize = elementPerSecond / 100
+      sliceSize = elementPerSecond / 10
       computeNewRequests(withDelay = false)
     }
   }
