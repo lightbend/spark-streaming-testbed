@@ -159,7 +159,7 @@ object TestData {
       .to[List]
 
     val applicationDroppedValues = applicationAllLines
-      .filter { _.contains("ConnectionManagerActor") }
+      .filter { l => l.contains("unable to deliver")}
       .map(ApplicationLogData.parseDroppedValues(_))
       .to[List]
 

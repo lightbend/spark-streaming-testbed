@@ -124,11 +124,9 @@ unset y2range
 """)
 
     val maxTickValue = data.tick.map(_.count).max
-    val maxdroppedValues = data.droppedValuesPerSecond.map(_.count).max
 
     builder.append(s"""
 set yrange [ 0 : ${(maxTickValue * 1.2).toInt} ]
-set y2range [ 0 : ${(maxdroppedValues * 1.2).toInt} ]
 """)
 
     builder.append("""
