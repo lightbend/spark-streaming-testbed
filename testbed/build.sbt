@@ -3,7 +3,7 @@ lazy val root = (project in file(".")).
   settings(
     organization := "com.typesafe.spark",
     name := "spark-streaming-testbed",
-    version := "0.1.3",
+    version := "0.2.0",
     scalaVersion := "2.10.5",
     resolvers += "bintray-skyluc-maven" at "http://dl.bintray.com/skyluc/maven",
     libraryDependencies ++= Seq(
