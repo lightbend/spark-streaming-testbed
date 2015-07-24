@@ -32,7 +32,7 @@ object SimpleStreamingApp {
     {
       import config._
       println(s"""
-        Connecting to $hostname:${ports.mkString(",")}:${reactivePorts.mkString(",")} using Spark $master.
+        Connecting to $hostname:${ports.mkString(",")}:${reactivePorts.mkString(",")} with ${pid.getOrElse("no PID")} using Spark $master.
       """)
     }
     val conf = new SparkConf()
@@ -44,9 +44,7 @@ object SimpleStreamingApp {
     val ssc = new StreamingContext(conf, Milliseconds(config.batchInterval))
 
     val tcpStreams = config.ports.map { p =>
-      val lines = ssc.socketTextStream(config.hostname, p, StorageLevel.MEMORY_ONLY)
-      lines.attachRateEstimator(new PIDRateEstimator())
-      lines
+      ssc.socketTextStream(config.hostname, p, StorageLevel.MEMORY_ONLY)
     }
 
     val rsStreams = config.reactivePorts.map { p =>
@@ -61,6 +59,9 @@ object SimpleStreamingApp {
     val allStreams = tcpStreams ::: rsStreams
 
     val computedSTreams = allStreams.map { lines =>
+      config.pid.foreach { pidConfig =>
+        lines.attachRateEstimator(new PIDRateEstimator(pidConfig.proportional, pidConfig.integral, pidConfig.derivative))
+      }
       val streamId = lines.id
 
       val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
@@ -118,7 +119,7 @@ object SimpleStreamingApp {
     Stats(count, sum, mean, stddev, System.currentTimeMillis())
   }
 
-  val DefaultConfig = Config("local[*]", "", Nil, Nil, 1000, "ignore", 1)
+  val DefaultConfig = Config("local[*]", "", Nil, None, Nil, 1000, "ignore", 1)
 
   private val parser = new OptionParser[Config]("simple-streaming") {
     help("help")
@@ -133,6 +134,12 @@ object SimpleStreamingApp {
       .optional()
       .action { (x, c) => c.copy(ports = x.to[List]) }
       .text("Port number to which the TCP receivers should connect")
+
+    opt[String]('i', "pid")
+      .optional()
+      .action { (x, c) => c.copy(pid = PIDConfig.parse(x).right.toOption) }
+      .text("PID configuration for the TCP receivers. Format: <p>,<i>,<d>")
+      .validate { x => PIDConfig.parse(x).fold(i => Left(i),i => Right(())) }
 
     opt[Seq[Int]]('r', "reactivePorts")
       .optional()
