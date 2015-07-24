@@ -32,7 +32,7 @@ object SimpleStreamingApp {
     {
       import config._
       println(s"""
-        Connecting to $hostname:${ports.mkString(",")} using Spark $master.
+        Connecting to $hostname:${ports.mkString(",")}:${reactivePorts.mkString(",")} using Spark $master.
       """)
     }
     val conf = new SparkConf()
@@ -43,14 +43,24 @@ object SimpleStreamingApp {
 
     val ssc = new StreamingContext(conf, Milliseconds(config.batchInterval))
 
-    val computedSTreams = config.ports.map { p =>
-//      val lines = ssc.socketTextStream(config.hostname, p, StorageLevel.MEMORY_ONLY)
-      val lines = new SubscriberInputDStream(ssc, StorageLevel.MEMORY_ONLY)({
+    val tcpStreams = config.ports.map { p =>
+      val lines = ssc.socketTextStream(config.hostname, p, StorageLevel.MEMORY_ONLY)
+      lines.attachRateEstimator(new PIDRateEstimator())
+      lines
+    }
+
+    val rsStreams = config.reactivePorts.map { p =>
+      new SubscriberInputDStream(ssc, StorageLevel.MEMORY_ONLY)({
         val h = config.hostname
         val po = p
         val f = () => new TcpPublisher(h, po)
-        f})
-      lines.attachRateEstimator(new PIDRateEstimator())
+        f
+      })
+    }
+
+    val allStreams = tcpStreams ::: rsStreams
+
+    val computedSTreams = allStreams.map { lines =>
       val streamId = lines.id
 
       val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
@@ -108,7 +118,7 @@ object SimpleStreamingApp {
     Stats(count, sum, mean, stddev, System.currentTimeMillis())
   }
 
-  val DefaultConfig = Config("local[*]", "", Nil, 1000, "ignore", 1)
+  val DefaultConfig = Config("local[*]", "", Nil, Nil, 1000, "ignore", 1)
 
   private val parser = new OptionParser[Config]("simple-streaming") {
     help("help")
@@ -120,23 +130,18 @@ object SimpleStreamingApp {
       .text("Hostname where receivers should connect")
 
     opt[Seq[Int]]('p', "ports")
-      .required()
+      .optional()
       .action { (x, c) => c.copy(ports = x.to[List]) }
-      .text("Port number to which receivers should connect")
+      .text("Port number to which the TCP receivers should connect")
+
+    opt[Seq[Int]]('r', "reactivePorts")
+      .optional()
+      .action { (x, c) => c.copy(reactivePorts = x.to[List]) }
+      .text("Port number to which the RS receivers should connect")
 
     opt[String]('m', "master")
       .action { (x, c) => c.copy(master = x) }
       .text("Spark master to connect to")
-
-    opt[String]('s', "strategy")
-      .action { (x, c) => c.copy(strategy = x) }
-      .text("Push-back strategy to use")
-      .validate { s =>
-        if (Set("ignore", "drop", "sampling", "pushback", "reactive").contains(s))
-          success
-        else
-          failure(s"$s is not a valid strategy")
-      }
 
     opt[Int]('b', "batch-interval")
       .action { (x, c) => c.copy(batchInterval = x) }
@@ -146,7 +151,13 @@ object SimpleStreamingApp {
 
   private def parseArgs(args: Array[String]): Config = {
     parser.parse(args, DefaultConfig) match {
-      case Some(config) => config
+      case Some(config) =>
+        // checks that at least one port is defined
+        if (config.ports.isEmpty && config.reactivePorts.isEmpty) {
+          parser.reportError("'ports' or 'reactivePorts' should be defined")
+          sys.exit(1)
+        }
+        config
       case None =>
         sys.exit(1)
     }

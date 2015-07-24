@@ -90,7 +90,6 @@ private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) exten
     subscription = sub
     lock synchronized {
       secondStart = System.currentTimeMillis()
-      logInfo(s"second start $secondStart")
       requestItems(sliceSize * 2)
     }
   }
@@ -101,11 +100,9 @@ private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) exten
 
   private def computeNewRequests(withDelay: Boolean): Unit = {
     if (requestedElements <= nextCheck) {
-      logInfo(s"requestedElements $requestedElements")
       val elapsedTimeInSecond = System.currentTimeMillis() - secondStart
       if (elapsedTimeInSecond > 1000) {
         secondStart += elapsedTimeInSecond
-        logInfo(s"new second start $elapsedTimeInSecond $secondStart ${System.currentTimeMillis}")
         elementInSecond = 0
         val toRequest = sliceSize * 2 - requestedElements
         if (toRequest > 0) {
@@ -113,11 +110,10 @@ private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) exten
         }
       } else {
         val expectedExhauctionTime = 1000D * elementInSecond / elementPerSecond
-        logInfo(s"wait computation: $elementInSecond $elementPerSecond $expectedExhauctionTime $elapsedTimeInSecond")
         if (requestedElements == 0) {
           if (withDelay == true)
             // TODO: bad wait. Should be pushed on some clock
-            logInfo(s"waiting ${expectedExhauctionTime - elapsedTimeInSecond}")
+            logDebug(s"waiting ${expectedExhauctionTime - elapsedTimeInSecond}")
             lock.wait((expectedExhauctionTime - elapsedTimeInSecond).toInt + 1)
             requestItems(sliceSize)
         } else {
@@ -134,7 +130,7 @@ private[rs] class InternalSubscriber[T](subscriber: SubscriberReceiver[T]) exten
   }
   
   private def requestItems(number: Long): Unit = {
-    logInfo(s"requesting $number items")
+    logDebug(s"requesting $number items")
     requestedElements += number
     nextCheck = requestedElements / 2
     subscription.request(number)
