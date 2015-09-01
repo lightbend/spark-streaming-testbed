@@ -37,6 +37,7 @@ object SimpleStreamingApp {
     }
     val conf = new SparkConf()
       .setAppName("Streaming tower of Hanoi resolution")
+      .set("spark.streaming.backpressure.enabled", "true")
 
     if (conf.getOption("spark.master").isEmpty)
       conf.setMaster(config.master)
@@ -59,9 +60,9 @@ object SimpleStreamingApp {
     val allStreams = tcpStreams ::: rsStreams
 
     val computedSTreams = allStreams.map { lines =>
-      config.pid.foreach { pidConfig =>
-        lines.attachRateEstimator(new PIDRateEstimator(pidConfig.proportional, pidConfig.integral, pidConfig.derivative))
-      }
+//      config.pid.foreach { pidConfig =>
+//        lines.attachRateEstimator(new PIDRateEstimator(pidConfig.proportional, pidConfig.integral, pidConfig.derivative))
+//      }
       val streamId = lines.id
 
       val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
