@@ -175,7 +175,7 @@ object TestData {
         .foldLeft(Stream[String]())(_.append(_))
 
     val receiverFeedback = receiverAllLines
-      .filter(_.contains("Received update"))
+      .filter(_.contains("Received a new rate limit"))
       .map(ReceiverLogData.parseFeedback(_))
       .filterNot { _.limit == 0 }
       .to[List]
