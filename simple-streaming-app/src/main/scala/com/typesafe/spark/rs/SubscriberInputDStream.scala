@@ -40,9 +40,9 @@ private[rs] class SubscriberReceiver[T](
     internalSubscriber.disconnect
   }
 
-  /*override*/ def useRateLimiterInReceiver: Boolean = true
+  override def useRateLimiterInReceiver: Boolean = true
 
-  /*override*/ def updateRateLimit(eps: Long): Unit = {
+  override def updateRateLimit(eps: Long): Unit = {
     if (eps > 0)
       internalSubscriber.updateRateLimit(eps)
   }

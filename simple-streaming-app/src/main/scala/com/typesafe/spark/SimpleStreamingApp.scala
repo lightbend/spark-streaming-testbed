@@ -32,12 +32,16 @@ object SimpleStreamingApp {
     {
       import config._
       println(s"""
-        Connecting to $hostname:${ports.mkString(",")}:${reactivePorts.mkString(",")} with ${pid.getOrElse("no PID")} using Spark $master.
+        Connecting to $hostname:${ports.mkString(",")}:${reactivePorts.mkString(",")} with ${if (pid) "PID" else "no PID"} using Spark $master.
       """)
     }
     val conf = new SparkConf()
       .setAppName("Streaming tower of Hanoi resolution")
-      .set("spark.streaming.backpressure.enabled", "true")
+      .set("spark.executor.memory", "512m")
+
+    if (config.pid) {
+      conf.set("spark.streaming.backpressure.enabled", "true")
+    }
 
     if (conf.getOption("spark.master").isEmpty)
       conf.setMaster(config.master)
@@ -60,9 +64,6 @@ object SimpleStreamingApp {
     val allStreams = tcpStreams ::: rsStreams
 
     val computedSTreams = allStreams.map { lines =>
-//      config.pid.foreach { pidConfig =>
-//        lines.attachRateEstimator(new PIDRateEstimator(pidConfig.proportional, pidConfig.integral, pidConfig.derivative))
-//      }
       val streamId = lines.id
 
       val numbers = lines.flatMap { line => Try(Integer.parseInt(line)).toOption }
@@ -120,7 +121,7 @@ object SimpleStreamingApp {
     Stats(count, sum, mean, stddev, System.currentTimeMillis())
   }
 
-  val DefaultConfig = Config("local[*]", "", Nil, None, Nil, 1000, "ignore", 1)
+  val DefaultConfig = Config("local[*]", "", Nil, false, Nil, 1000, "ignore", 1)
 
   private val parser = new OptionParser[Config]("simple-streaming") {
     help("help")
@@ -136,11 +137,9 @@ object SimpleStreamingApp {
       .action { (x, c) => c.copy(ports = x.to[List]) }
       .text("Port number to which the TCP receivers should connect")
 
-    opt[String]('i', "pid")
-      .optional()
-      .action { (x, c) => c.copy(pid = PIDConfig.parse(x).right.toOption) }
-      .text("PID configuration for the TCP receivers. Format: <p>,<i>,<d>")
-      .validate { x => PIDConfig.parse(x).fold(i => Left(i),i => Right(())) }
+    opt[Unit]('i', "pid")
+      .action { (_, c) => c.copy(pid = true) }
+      .text("Enable the PID rate estimator")
 
     opt[Seq[Int]]('r', "reactivePorts")
       .optional()
