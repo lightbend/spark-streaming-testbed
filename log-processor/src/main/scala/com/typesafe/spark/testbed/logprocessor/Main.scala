@@ -45,6 +45,7 @@ set datafile missing "?"
 set style fill transparent solid 0.25
 
 set style arrow 1 nohead ls 1
+set style arrow 2 nohead ls 1 lc 3
 set ytics nomirror
 """)
     builder.append(s"""
@@ -67,9 +68,9 @@ set ylabel "execution time (in milliseconds)"
 set y2label "memory (in MB)"
 
 plot "memory.log" using 1:(5000) with line lt 0 lc 3 title "batch interval", \
-  "execution.log" using 2:(0):($1-$2):($1-$2) with vector title "Spark - delay + processing, of each batch" arrowstyle 1, \
-  "memory.log" using 1:($2/1024) axes x1y2 with lines title "Spark - free memory to store the blocks" lt 1 lc 2
- 
+  "memory.log" using 1:($2/1024) axes x1y2 with lines title "Spark - free memory to store the blocks" lt 1 lc 2, \
+  "pid.log" using ($1-$3-$4):(0):3:3 with vector title "processing time" arrowstyle 2, \
+  "pid.log" using ($1-$4):3:4:4 with vector title "scheduling delay" arrowstyle 1
 
 """)
 
@@ -81,7 +82,6 @@ set y2range [ 0 : 1.1 ]
 
 """)
 
-    var column = 3
     data.dataPerStream.foreach { stream =>
 
       val id = stream.streamId
@@ -132,14 +132,23 @@ set yrange [ 0 : ${(maxTickValue * 1.2).toInt} ]
     builder.append("""
 set boxwidth 1000
 
-plot "droppedValuesPerSecond.log" using 1:2 with boxes title "testbed, # of item dropped per second, as TCP socket was not ready" lt 1 lc 1, \
 """)
 
-    val tickLines = data.tickMultipleValues.values.zipWithIndex.map { t =>
-      s""""tick.log" using 1:($$${t._2 + 2}) with fillsteps title "testbed, # of item ${t._1} to send at each second" lt 1 lc ${t._2 + 3}"""
-    }
-    builder.append(tickLines.mkString(""", \
+    data.dataPerClient.foreach { client =>
+      builder.append(s"""plot "droppedValuesPerSecond_${client.clientId}.log" using 1:2 with boxes title "testbed, # of item dropped per second" lt 1 lc 1, \\
+""")
+      if (!client.requestedValues.isEmpty) {
+        builder.append(s"""     "requestedValuesPerSecond_${client.clientId}.log" using 1:2 with lines title "testbed, # of item requested per second" lt 1 lc 2, \\
+""")
+      }
+
+      val tickLines = data.tickMultipleValues.values.zipWithIndex.map { t =>
+        s""""tick.log" using 1:($$${t._2 + 2}) with fillsteps title "testbed, # of item ${t._1} to send at each second" lt 1 lc ${t._2 + 3}"""
+      }
+      builder.append(tickLines.mkString(""", \
 """))
+    }
+
 
     builder.append("""
 unset multiplot

@@ -12,21 +12,38 @@ case class StreamData(
   feedback: List[FeedbackLogData],
   ratio: List[RatioLogData])
 
-case class TestData(
-  memory: List[MemoryLogData],
-  execution: List[ExecutionLogData],
-  tick: List[TickLogData],
+case class ClientData(
+  clientId: Int,
   droppedValues: List[DroppedValuesLogData],
-  feedback: List[FeedbackLogData],
-  ratio: List[RatioLogData]) {
+  requestedValues: List[RequestedValuesLogData]) {
 
   lazy val droppedValuesPerSecond: List[DroppedValuesLogData] = {
     val unordered: List[DroppedValuesLogData] = droppedValues.groupBy { _.time / 1000 }.map { g =>
-      DroppedValuesLogData(g._1 * 1000, g._2.map(_.count).sum)
+      DroppedValuesLogData(g._1 * 1000, g._2.map(_.count).sum, clientId)
     }(collection.breakOut)
 
     unordered.sortBy(_.time)
   }
+
+  lazy val requestedValuesPerSecond: List[DroppedValuesLogData] = {
+    val unordered: List[DroppedValuesLogData] = requestedValues.groupBy { _.time / 1000 }.map { g =>
+      DroppedValuesLogData(g._1 * 1000, g._2.map(_.count).sum, clientId)
+    }(collection.breakOut)
+
+    unordered.sortBy(_.time)
+  }
+
+}
+
+case class TestData(
+  memory: List[MemoryLogData],
+  execution: List[ExecutionLogData],
+  pid: List[PidLogData],
+  tick: List[TickLogData],
+  droppedValues: List[DroppedValuesLogData],
+  requestedValues: List[RequestedValuesLogData],
+  feedback: List[FeedbackLogData],
+  ratio: List[RatioLogData]) {
 
   lazy val tickMultipleValues: TickMultipleValuesData =
     TickMultipleValuesData(tick)
@@ -45,6 +62,19 @@ case class TestData(
     }
   }
 
+  lazy val dataPerClient: List[ClientData] = {
+    val clientIds = (droppedValues.map(_.clientId).distinct ++: requestedValues.map(_.clientId).distinct).distinct.sorted
+
+    clientIds.map { id =>
+
+      val droppedValuesForClient = droppedValues.filter(_.clientId == id)
+      val requestedValuesForClient = requestedValues.filter(_.clientId == id)
+
+      ClientData(id, droppedValuesForClient, requestedValuesForClient)
+    }
+
+  }
+
   /**
    * Change the data such as time 0 is the time of the first processed batch.
    */
@@ -53,8 +83,10 @@ case class TestData(
     TestData(
       memory.map(_.timeShift(baseTime)),
       execution.map(_.timeShift(baseTime)),
+      pid.map(_.timeShift(baseTime)),
       tick.map(_.timeShift(baseTime)),
       droppedValues.map(_.timeShift(baseTime)),
+      requestedValues.map(_.timeShift(baseTime)),
       feedback.map(_.timeShift(baseTime)),
       ratio.map(_.timeShift(baseTime)))
   }
@@ -66,13 +98,18 @@ case class TestData(
     workFolder.mkdirs()
     TestData.dump(memory, new File(workFolder, "memory.log"))
     TestData.dump(ExecutionTimeData(execution), new File(workFolder, "execution.log"))
+    TestData.dump(pid, new File(workFolder, "pid.log"))
     TestData.dump(tickMultipleValues.entries, new File(workFolder, "tick.log"))
-    TestData.dump(droppedValues, new File(workFolder, "droppedValues.log"))
-    TestData.dump(droppedValuesPerSecond, new File(workFolder, "droppedValuesPerSecond.log"))
     dataPerStream.foreach { stream =>
       TestData.dump(stream.execution.entries, new File(workFolder, s"execution_${stream.streamId}.log"))
       TestData.dump(stream.feedback, new File(workFolder, s"feedback_${stream.streamId}.log"))
       TestData.dump(stream.ratio, new File(workFolder, s"ratio_${stream.streamId}.log"))
+    }
+    dataPerClient.foreach { client =>
+      TestData.dump(client.droppedValues, new File(workFolder, s"droppedValues_${client.clientId}.log"))
+      TestData.dump(client.droppedValuesPerSecond, new File(workFolder, s"droppedValuesPerSecond_${client.clientId}.log"))
+      TestData.dump(client.requestedValues, new File(workFolder, s"requestedValues_${client.clientId}.log"))
+      TestData.dump(client.requestedValuesPerSecond, new File(workFolder, s"requestedValuesPerSecond_${client.clientId}.log"))
     }
   }
 
@@ -151,6 +188,11 @@ object TestData {
       .map(RunLogData.parseExecution(_))
       .to[List]
 
+    val runPid = runAllLines
+      .filter { _.contains("processing time") }
+      .map(RunLogData.parsePid(_))
+      .to[List].filterNot { _.records == 0 }
+
     val applicationAllLines = Source.fromFile(new File(baseFolder, "application.log")).getLines().toStream
 
     val applicationTick = applicationAllLines
@@ -159,8 +201,13 @@ object TestData {
       .to[List]
 
     val applicationDroppedValues = applicationAllLines
-      .filter { l => l.contains("unable to deliver")}
+      .filter { l => l.contains("unable to deliver") }
       .map(ApplicationLogData.parseDroppedValues(_))
+      .to[List]
+
+    val applicationRequestedValues = applicationAllLines
+      .filter { l => l.contains("received request") }
+      .map(ApplicationLogData.parseRequestedValues(_))
       .to[List]
 
     val receiverFiles = baseFolder.listFiles(new FilenameFilter {
@@ -185,7 +232,7 @@ object TestData {
       .map(ReceiverLogData.parseRatio(_))
       .to[List]
 
-    TestData(runAddedInput, runExecution, applicationTick, applicationDroppedValues, receiverFeedback, receiverRatio)
+    TestData(runAddedInput, runExecution, runPid, applicationTick, applicationDroppedValues, applicationRequestedValues, receiverFeedback, receiverRatio)
   }
 
   /**

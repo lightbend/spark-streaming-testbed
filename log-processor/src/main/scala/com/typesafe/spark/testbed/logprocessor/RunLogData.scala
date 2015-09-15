@@ -18,7 +18,7 @@ object ExecutionTimeData {
   def apply(log: List[ExecutionLogData]): List[ExecutionTimeLogData] = {
     log.map { l =>
       ExecutionTimeLogData(l.time, l.batchTime)
-    }.groupBy {_.batchTime}.map(_._2.head).to[List].sortBy{ _.batchTime}
+    }.groupBy { _.batchTime }.map(_._2.head).to[List].sortBy { _.batchTime }
   }
 }
 
@@ -53,12 +53,20 @@ object ExecutionMultipleValuesData {
 
 }
 
+case class PidLogData(time: Long, records: Int, processing: Int, delay: Int) extends LogData[PidLogData] {
+
+  def toCSVRow: String = s"$time $records $processing $delay"
+
+  def timeShift(shift: Long) = copy(time = time - shift)
+}
+
 object RunLogData {
 
-  private val memoryRegex = "([^ ]* [^ ]*).*free: ([^ ]*) (..)\\)".r
   private val dateParser = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSSZ")
 
+  private val memoryRegex = "([^ ]* [^ ]*).*free: ([^ ]*) (..)\\)".r
   private val executionRegex = "[^\\d]*(\\d*)\t(\\d*)\t(\\d*)\t(\\d*)\t(\\d*).*".r
+  private val pidRegex = "time = (\\d*), # records = (\\d*), processing time = (\\d*), scheduling delay = (\\d*)".r
 
   def parseMemory(line: String): MemoryLogData = {
     line match {
@@ -79,6 +87,13 @@ object RunLogData {
     line match {
       case executionRegex(logTimeString, batchTimeString, itemString, streamId, countString) =>
         ExecutionLogData(logTimeString.toLong, batchTimeString.toLong, itemString.toInt, streamId.toInt, countString.toInt)
+    }
+  }
+
+  def parsePid(line: String): PidLogData = {
+    line match {
+      case pidRegex(time, records, processing, delay) =>
+        PidLogData(time.toLong, records.toInt, processing.toInt, delay.toInt)
     }
   }
 
